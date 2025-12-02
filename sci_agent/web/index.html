@@ -1,0 +1,2822 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SciAgent-科学问答系统</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.0.0/css/all.min.css" rel="stylesheet">
+    <!-- KaTeX 公式渲染 -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+    <style>
+        .thinking-step { animation: fadeIn 0.3s ease-in; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .typing-indicator span { animation: blink 1.4s infinite both; }
+        .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+        .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes blink { 0%, 80%, 100% { opacity: 0; } 40% { opacity: 1; } }
+        .confidence-bar { transition: width 0.5s ease; }
+        .message-enter { animation: slideIn 0.3s ease; }
+        @keyframes slideIn { from { opacity: 0; transform: translateX(-20px); } to { opacity: 1; transform: translateX(0); } }
+        .sidebar { transition: transform 0.3s ease; }
+        .sidebar.collapsed { transform: translateX(-100%); }
+        pre { white-space: pre-wrap; word-wrap: break-word; }
+        /* 公式样式 */
+        .katex-display { margin: 1em 0; overflow-x: auto; overflow-y: hidden; }
+        .katex { font-size: 1.1em; }
+        .formula-block { 
+            background: #f8fafc; 
+            border-left: 3px solid #3b82f6; 
+            padding: 12px 16px; 
+            margin: 12px 0; 
+            border-radius: 0 8px 8px 0;
+            overflow-x: auto;
+        }
+        .formula-inline { 
+            background: #f1f5f9; 
+            padding: 2px 6px; 
+            border-radius: 4px; 
+        }
+        /* 答案内容样式 */
+        .answer-content { line-height: 1.8; }
+        .answer-content p { margin-bottom: 0.8em; }
+        .answer-content ul, .answer-content ol { margin: 0.5em 0; padding-left: 1.5em; }
+        .answer-content li { margin-bottom: 0.3em; }
+        .answer-content code { 
+            background: #f1f5f9; 
+            padding: 2px 6px; 
+            border-radius: 4px; 
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.9em;
+        }
+        .answer-content pre code {
+            display: block;
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 12px 16px;
+            border-radius: 8px;
+            overflow-x: auto;
+        }
+        .answer-content h1, .answer-content h2, .answer-content h3 {
+            font-weight: 600;
+            margin: 1em 0 0.5em 0;
+            color: #1e293b;
+        }
+        .answer-content h1 { font-size: 1.25em; }
+        .answer-content h2 { font-size: 1.15em; }
+        .answer-content h3 { font-size: 1.05em; }
+        .answer-content blockquote {
+            border-left: 3px solid #cbd5e1;
+            padding-left: 1em;
+            margin: 0.8em 0;
+            color: #64748b;
+        }
+        .answer-content table {
+            border-collapse: collapse;
+            margin: 0.8em 0;
+            width: 100%;
+        }
+        .answer-content th, .answer-content td {
+            border: 1px solid #e2e8f0;
+            padding: 8px 12px;
+            text-align: left;
+        }
+        .answer-content th { background: #f8fafc; font-weight: 600; }
+        .drop-zone { border: 2px dashed #cbd5e0; transition: all 0.3s; }
+        .drop-zone.dragover { border-color: #3b82f6; background: #eff6ff; }
+        .doc-item { transition: all 0.2s; }
+        .doc-item:hover { background: #f3f4f6; }
+        .suggested-q { cursor: pointer; transition: all 0.2s; }
+        .suggested-q:hover { background: #dbeafe; }
+        /* 深度思考样式 - 类似DeepSeek */
+        .thinking-container { margin-bottom: 1rem; }
+        .thinking-box { box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .thinking-header:hover { background: #e5e7eb; }
+        .thinking-content { 
+            background: #fafafa; 
+            border-top: 1px solid #e5e7eb;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+        .thinking-text {
+            line-height: 1.8;
+            color: #374151;
+        }
+        .toggle-icon { transition: transform 0.2s ease; }
+        .toggle-icon.rotate-180 { transform: rotate(180deg); }
+        .thinking-content.hidden { display: none; }
+        /* 思考文字动画 */
+        .thinking-text::after {
+            content: '▌';
+            animation: cursor-blink 1s infinite;
+            color: #3b82f6;
+        }
+        .thinking-complete .thinking-text::after { display: none; }
+        @keyframes cursor-blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0; }
+        }
+        /* 引用高亮样式 */
+        .citation-highlight {
+            background: linear-gradient(180deg, transparent 60%, #fef08a 60%);
+            padding: 2px 4px;
+            border-radius: 2px;
+            animation: highlightPulse 2s ease-in-out;
+        }
+        @keyframes highlightPulse {
+            0% { background-color: #fbbf24; }
+            50% { background-color: #fef08a; }
+            100% { background-color: #fef08a; }
+        }
+        /* 快捷功能按钮样式 */
+        .quick-action-btn {
+            transition: all 0.2s ease;
+        }
+        .quick-action-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        /* 思维导图节点样式 */
+        .mindmap-node {
+            transition: all 0.2s ease;
+        }
+        .mindmap-node:hover {
+            transform: translateX(5px);
+        }
+    </style>
+</head>
+<body class="bg-gray-100 h-screen flex">
+    <!-- 登录模态框 -->
+    <div id="authModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white rounded-lg p-8 w-96 shadow-xl">
+            <h2 id="authTitle" class="text-2xl font-bold mb-6 text-center text-gray-800">登录</h2>
+            <form id="authForm">
+                <div class="mb-4">
+                    <label class="block text-gray-700 mb-2">用户名</label>
+                    <input type="text" id="username" class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" required>
+                </div>
+                <div class="mb-6">
+                    <label class="block text-gray-700 mb-2">密码</label>
+                    <input type="password" id="password" class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" required>
+                </div>
+                <button type="submit" id="authSubmit" class="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700">登录</button>
+            </form>
+            <p class="mt-4 text-center text-gray-600">
+                <span id="authSwitch">没有账号？<a href="#" class="text-blue-600 hover:underline" onclick="toggleAuthMode()">注册</a></span>
+            </p>
+        </div>
+    </div>
+
+    <!-- 侧边栏 -->
+    <div id="sidebar" class="sidebar w-72 bg-gray-900 text-white flex flex-col">
+        <div class="p-4 border-b border-gray-700">
+            <h1 class="text-xl font-bold flex items-center"><i class="fas fa-flask mr-2"></i> SciAgent</h1>
+            <p class="text-gray-400 text-sm mt-1">科学文献问答系统</p>
+        </div>
+        <div class="p-4">
+            <button onclick="createConversation()" class="w-full bg-blue-600 hover:bg-blue-700 py-2 px-4 rounded-lg flex items-center justify-center">
+                <i class="fas fa-plus mr-2"></i> 新对话
+            </button>
+        </div>
+        <div class="flex-1 overflow-y-auto p-4">
+            <h3 class="text-gray-400 text-sm mb-2">对话历史</h3>
+            <div id="conversationList" class="space-y-2"></div>
+        </div>
+        <div class="p-4 border-t border-gray-700">
+            <div id="userInfo" class="flex items-center justify-between">
+                <span id="usernameDisplay" class="text-sm"></span>
+                <button onclick="logout()" class="text-gray-400 hover:text-white"><i class="fas fa-sign-out-alt"></i></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 主内容区 -->
+    <div class="flex-1 flex flex-col">
+        <!-- 顶部栏 -->
+        <div class="bg-white shadow-sm p-4 flex items-center justify-between">
+            <div class="flex items-center">
+                <button onclick="toggleSidebar()" class="mr-4 text-gray-600 hover:text-gray-800 lg:hidden"><i class="fas fa-bars text-xl"></i></button>
+                <h2 id="conversationTitle" class="text-lg font-semibold text-gray-800">新对话</h2>
+                <span id="docCount" class="ml-3 text-sm text-gray-500 hidden cursor-pointer hover:text-blue-600" onclick="toggleDocumentsPanelVisibility()" title="点击查看文档列表"></span>
+            </div>
+            <div class="flex items-center space-x-3">
+                <button onclick="showUploadModal()" class="text-gray-600 hover:text-blue-600" title="上传文档"><i class="fas fa-upload"></i> 上传</button>
+                <button onclick="showReportModal()" id="reportBtn" class="text-gray-600 hover:text-green-600 hidden" title="生成报告"><i class="fas fa-file-alt"></i> 报告</button>
+                <button onclick="showReflection()" id="reflectionBtn" class="text-gray-600 hover:text-yellow-600 hidden" title="查看反思"><i class="fas fa-lightbulb"></i> 反思</button>
+                <button onclick="deleteCurrentConversation()" id="deleteBtn" class="text-gray-600 hover:text-red-600 hidden" title="删除对话"><i class="fas fa-trash"></i></button>
+            </div>
+        </div>
+
+        <!-- 文档列表区 -->
+        <div id="documentsPanel" class="bg-gray-50 p-3 border-b hidden">
+            <div class="flex items-center justify-between mb-2">
+                <div class="flex items-center">
+                    <i class="fas fa-file-pdf text-red-500 mr-2"></i>
+                    <span class="text-sm font-medium text-gray-800">已上传文档</span>
+                </div>
+                <button onclick="toggleDocumentsPanel()" class="text-gray-500 hover:text-gray-700 text-sm">
+                    <i class="fas fa-chevron-up"></i> 收起
+                </button>
+            </div>
+            <div id="documentsList" class="flex flex-wrap gap-2"></div>
+        </div>
+
+        <!-- 推荐问题区 -->
+        <div id="suggestedQuestions" class="bg-blue-50 p-3 border-b hidden">
+            <div class="flex items-center mb-2">
+                <i class="fas fa-question-circle text-blue-600 mr-2"></i>
+                <span class="text-sm font-medium text-blue-800">推荐问题</span>
+            </div>
+            <div id="questionsList" class="flex flex-wrap gap-2"></div>
+        </div>
+
+        <!-- 消息区域 -->
+        <div id="messagesContainer" class="flex-1 overflow-y-auto p-4 space-y-4">
+            <div class="text-center text-gray-500 py-8">
+                <i class="fas fa-comments text-4xl mb-4"></i>
+                <p>上传文档或直接提问，开始探索科学文献</p>
+            </div>
+        </div>
+
+        <!-- 输入区域 -->
+        <div class="bg-white border-t p-4">
+            <div class="max-w-4xl mx-auto">
+                <!-- 快捷功能按钮栏 -->
+                <div id="quickActions" class="flex flex-wrap gap-2 mb-3 hidden">
+                    <button onclick="showReportModal()" class="quick-action-btn flex items-center px-3 py-1.5 bg-green-50 text-green-700 rounded-lg hover:bg-green-100 text-sm border border-green-200">
+                        <i class="fas fa-file-alt mr-1.5"></i>生成报告
+                    </button>
+                    <button onclick="showReportHistoryModal()" class="quick-action-btn flex items-center px-3 py-1.5 bg-green-50 text-green-700 rounded-lg hover:bg-green-100 text-sm border border-green-200">
+                        <i class="fas fa-history mr-1.5"></i>历史报告
+                    </button>
+                    <button onclick="showVisualizationModal()" class="quick-action-btn flex items-center px-3 py-1.5 bg-indigo-50 text-indigo-700 rounded-lg hover:bg-indigo-100 text-sm border border-indigo-200">
+                        <i class="fas fa-image mr-1.5"></i>论文可视化
+                    </button>
+                    <button onclick="showMindmapModal()" class="quick-action-btn flex items-center px-3 py-1.5 bg-purple-50 text-purple-700 rounded-lg hover:bg-purple-100 text-sm border border-purple-200">
+                        <i class="fas fa-project-diagram mr-1.5"></i>思维导图
+                    </button>
+                    <button onclick="showTranslateModal()" class="quick-action-btn flex items-center px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 text-sm border border-blue-200">
+                        <i class="fas fa-language mr-1.5"></i>翻译
+                    </button>
+                    <button onclick="showInterestingContent()" class="quick-action-btn flex items-center px-3 py-1.5 bg-yellow-50 text-yellow-700 rounded-lg hover:bg-yellow-100 text-sm border border-yellow-200">
+                        <i class="fas fa-lightbulb mr-1.5"></i>感兴趣内容
+                    </button>
+                    <button onclick="showReflection()" class="quick-action-btn flex items-center px-3 py-1.5 bg-orange-50 text-orange-700 rounded-lg hover:bg-orange-100 text-sm border border-orange-200">
+                        <i class="fas fa-brain mr-1.5"></i>查看反思
+                    </button>
+                </div>
+                <div class="flex items-end space-x-4">
+                    <div class="flex-1">
+                        <textarea id="questionInput" rows="2" class="w-full px-4 py-3 border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="输入您的问题..." onkeydown="handleKeyDown(event)"></textarea>
+                    </div>
+                    <div class="flex flex-col space-y-2">
+                        <label class="flex items-center text-sm text-gray-600">
+                            <input type="checkbox" id="showThinking" checked class="mr-2"> 显示推理
+                        </label>
+                        <button onclick="sendQuestion()" id="sendBtn" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg">
+                            <i class="fas fa-paper-plane"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 上传文档模态框 -->
+    <div id="uploadModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-bold">上传文档</h3>
+                <button onclick="closeUploadModal()" class="text-gray-500 hover:text-gray-700"><i class="fas fa-times text-xl"></i></button>
+            </div>
+            
+            <!-- 文件上传区 -->
+            <div id="dropZone" class="drop-zone rounded-lg p-8 text-center mb-4" ondrop="handleDrop(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
+                <i class="fas fa-cloud-upload-alt text-4xl text-gray-400 mb-3"></i>
+                <p class="text-gray-600 mb-2">拖拽文件到此处，或点击选择</p>
+                <p class="text-sm text-gray-400">支持 PDF, TXT, DOCX (最多50个文件)</p>
+                <input type="file" id="fileInput" multiple accept=".pdf,.txt,.docx,.doc,.md,.tex" class="hidden" onchange="handleFileSelect(event)">
+                <button onclick="document.getElementById('fileInput').click()" class="mt-3 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">选择文件</button>
+            </div>
+            
+            <!-- URL输入区 -->
+            <div class="mb-4">
+                <label class="block text-gray-700 mb-2">或输入论文PDF链接（每行一个）</label>
+                <textarea id="urlInput" rows="3" class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="https://arxiv.org/pdf/xxxx.pdf"></textarea>
+            </div>
+            
+            <!-- 已选文件列表 -->
+            <div id="selectedFiles" class="mb-4 hidden">
+                <h4 class="font-medium mb-2">已选择的文件</h4>
+                <div id="fileList" class="space-y-2 max-h-40 overflow-y-auto"></div>
+            </div>
+            
+            <div class="flex justify-end space-x-3">
+                <button onclick="closeUploadModal()" class="px-4 py-2 border rounded-lg hover:bg-gray-50">取消</button>
+                <button onclick="uploadDocuments()" id="uploadBtn" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
+                    <i class="fas fa-upload mr-2"></i>上传
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 报告生成模态框 -->
+    <div id="reportModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white rounded-lg p-6 w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-bold">生成综述报告</h3>
+                <button onclick="closeReportModal()" class="text-gray-500 hover:text-gray-700"><i class="fas fa-times text-xl"></i></button>
+            </div>
+            
+            <div id="reportInput" class="mb-4">
+                <label class="block text-gray-700 mb-2">请描述您的报告需求</label>
+                <textarea id="reportRequirement" rows="3" class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="例如：总结这些文献中关于深度学习在医学影像分析中的应用"></textarea>
+                <button onclick="generateReport()" class="mt-3 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700">
+                    <i class="fas fa-magic mr-2"></i>生成报告
+                </button>
+            </div>
+            
+            <div id="reportContent" class="hidden"></div>
+        </div>
+    </div>
+
+    <!-- 反思模态框 -->
+    <div id="reflectionModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden" onclick="if(event.target === this) closeReflection()">
+        <div class="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto" onclick="event.stopPropagation()">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-bold">对话反思</h3>
+                <button onclick="closeReflection()" class="text-gray-500 hover:text-gray-700"><i class="fas fa-times text-xl"></i></button>
+            </div>
+            <div id="reflectionContent"></div>
+        </div>
+    </div>
+
+    <!-- 答案历史模态框 -->
+    <div id="historyModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-bold">回答历史</h3>
+                <button onclick="closeHistory()" class="text-gray-500 hover:text-gray-700"><i class="fas fa-times text-xl"></i></button>
+            </div>
+            <div id="historyContent"></div>
+        </div>
+    </div>
+
+    <!-- PDF预览模态框 -->
+    <div id="pdfModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white rounded-lg w-full max-w-5xl h-[90vh] flex flex-col">
+            <div class="flex justify-between items-center p-4 border-b">
+                <div class="flex items-center space-x-4">
+                    <h3 id="pdfTitle" class="text-lg font-bold truncate max-w-md">PDF预览</h3>
+                    <div class="flex items-center space-x-2 text-sm text-gray-600">
+                        <button onclick="pdfPrevPage()" class="px-2 py-1 border rounded hover:bg-gray-100" title="上一页">
+                            <i class="fas fa-chevron-left"></i>
+                        </button>
+                        <span>
+                            <input type="number" id="pdfPageInput" class="w-12 text-center border rounded" min="1" onchange="pdfGoToPage(this.value)">
+                            / <span id="pdfTotalPages">0</span>
+                        </span>
+                        <button onclick="pdfNextPage()" class="px-2 py-1 border rounded hover:bg-gray-100" title="下一页">
+                            <i class="fas fa-chevron-right"></i>
+                        </button>
+                    </div>
+                    <div class="flex items-center space-x-2 text-sm">
+                        <button onclick="pdfZoomOut()" class="px-2 py-1 border rounded hover:bg-gray-100" title="缩小">
+                            <i class="fas fa-search-minus"></i>
+                        </button>
+                        <span id="pdfZoomLevel" class="w-16 text-center">100%</span>
+                        <button onclick="pdfZoomIn()" class="px-2 py-1 border rounded hover:bg-gray-100" title="放大">
+                            <i class="fas fa-search-plus"></i>
+                        </button>
+                        <button onclick="pdfFitWidth()" class="px-2 py-1 border rounded hover:bg-gray-100" title="适应宽度">
+                            <i class="fas fa-arrows-alt-h"></i>
+                        </button>
+                    </div>
+                </div>
+                <button onclick="closePdfModal()" class="text-gray-500 hover:text-gray-700 p-2">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+            <div id="pdfContainer" class="flex-1 overflow-auto bg-gray-200 p-4 flex justify-center">
+                <canvas id="pdfCanvas" class="shadow-lg"></canvas>
+            </div>
+            <!-- 页面内容面板 -->
+            <div id="pdfContentPanel" class="border-t bg-gray-50 max-h-48 overflow-y-auto hidden">
+                <div class="p-3">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-sm font-medium text-gray-700">
+                            <i class="fas fa-file-alt mr-1"></i>页面文本内容
+                        </span>
+                        <button onclick="toggleContentPanel()" class="text-gray-500 hover:text-gray-700 text-sm">
+                            <i class="fas fa-chevron-down"></i> 收起
+                        </button>
+                    </div>
+                    <div id="pdfPageContent" class="text-sm text-gray-600 whitespace-pre-wrap"></div>
+                </div>
+            </div>
+            <div class="p-3 border-t bg-white flex items-center justify-between">
+                <button onclick="toggleContentPanel()" class="text-sm text-blue-600 hover:text-blue-800">
+                    <i class="fas fa-file-alt mr-1"></i>显示页面文本
+                </button>
+                <a id="pdfDownloadLink" href="#" download class="text-sm text-blue-600 hover:text-blue-800">
+                    <i class="fas fa-download mr-1"></i>下载PDF
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- 思维导图模态框 -->
+    <div id="mindmapModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white rounded-lg p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-bold"><i class="fas fa-project-diagram mr-2 text-purple-600"></i>生成思维导图</h3>
+                <button onclick="closeMindmapModal()" class="text-gray-500 hover:text-gray-700"><i class="fas fa-times text-xl"></i></button>
+            </div>
+            
+            <div id="mindmapDocSelect" class="mb-4">
+                <label class="block text-gray-700 mb-2">选择文档（可多选，不选则使用全部）</label>
+                <div id="mindmapDocList" class="space-y-2 max-h-40 overflow-y-auto border rounded-lg p-3"></div>
+                <button onclick="generateMindmap()" class="mt-3 bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700">
+                    <i class="fas fa-magic mr-2"></i>生成思维导图
+                </button>
+            </div>
+            
+            <div id="mindmapContent" class="hidden">
+                <div id="mindmapTree" class="bg-gray-50 rounded-lg p-4 min-h-64"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 翻译模态框 -->
+    <div id="translateModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white rounded-lg p-6 w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-bold"><i class="fas fa-language mr-2 text-blue-600"></i>翻译</h3>
+                <button onclick="closeTranslateModal()" class="text-gray-500 hover:text-gray-700"><i class="fas fa-times text-xl"></i></button>
+            </div>
+            
+            <div class="mb-4">
+                <div class="flex space-x-4 mb-3">
+                    <button onclick="setTranslateMode('text')" id="translateTextBtn" class="px-4 py-2 bg-blue-600 text-white rounded-lg">文本翻译</button>
+                    <button onclick="setTranslateMode('doc')" id="translateDocBtn" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300">文档翻译</button>
+                </div>
+                
+                <div id="translateTextMode">
+                    <label class="block text-gray-700 mb-2">输入要翻译的文本</label>
+                    <textarea id="translateInput" rows="5" class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="粘贴或输入要翻译的文本..."></textarea>
+                </div>
+                
+                <div id="translateDocMode" class="hidden">
+                    <label class="block text-gray-700 mb-2">选择要翻译的文档</label>
+                    <div id="translateDocList" class="space-y-2 max-h-40 overflow-y-auto border rounded-lg p-3"></div>
+                    
+                    <!-- 页数范围选择 -->
+                    <div class="mt-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                        <label class="block text-gray-700 mb-2 text-sm font-medium">
+                            <i class="fas fa-file-alt mr-1"></i>翻译页数范围（可选，留空则翻译全部）
+                        </label>
+                        <div class="flex items-center space-x-2">
+                            <input type="number" id="translateStartPage" min="1" placeholder="起始页" class="w-24 px-2 py-1 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <span class="text-gray-500">~</span>
+                            <input type="number" id="translateEndPage" min="1" placeholder="结束页" class="w-24 px-2 py-1 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <span id="translatePageInfo" class="text-xs text-gray-500 ml-2"></span>
+                        </div>
+                        <p class="text-xs text-gray-500 mt-1">提示：选择较少页数可提高翻译质量和速度</p>
+                    </div>
+                    
+                    <!-- LaTeX 格式保留选项 -->
+                    <div class="mt-2">
+                        <label class="flex items-center text-sm text-gray-700 cursor-pointer">
+                            <input type="checkbox" id="preserveLatex" checked class="mr-2">
+                            <span>保留数学公式 LaTeX 格式（推荐）</span>
+                        </label>
+                    </div>
+                </div>
+                
+                <div class="flex items-center space-x-4 mt-3">
+                    <label class="text-gray-700">目标语言：</label>
+                    <select id="targetLanguage" class="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="zh">中文</option>
+                        <option value="en">英文</option>
+                        <option value="ja">日文</option>
+                        <option value="ko">韩文</option>
+                        <option value="fr">法文</option>
+                        <option value="de">德文</option>
+                    </select>
+                    <button onclick="doTranslate()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
+                        <i class="fas fa-exchange-alt mr-2"></i>翻译
+                    </button>
+                </div>
+            </div>
+            
+            <div id="translateResult" class="hidden">
+                <label class="block text-gray-700 mb-2">翻译结果</label>
+                <div id="translateOutput" class="bg-gray-50 rounded-lg p-4 whitespace-pre-wrap max-h-64 overflow-y-auto"></div>
+                <button onclick="copyTranslation()" class="mt-2 text-blue-600 hover:text-blue-800 text-sm">
+                    <i class="fas fa-copy mr-1"></i>复制翻译结果
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 感兴趣内容模态框 -->
+    <div id="interestingModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden" onclick="if(event.target === this) closeInterestingModal()">
+        <div class="bg-white rounded-lg p-6 w-full max-w-3xl max-h-[90vh] overflow-y-auto" onclick="event.stopPropagation()">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-bold"><i class="fas fa-lightbulb mr-2 text-yellow-500"></i>您可能感兴趣的内容</h3>
+                <button onclick="closeInterestingModal()" class="text-gray-500 hover:text-gray-700"><i class="fas fa-times text-xl"></i></button>
+            </div>
+            <div id="interestingContent"></div>
+        </div>
+    </div>
+
+    <!-- 报告历史模态框 -->
+    <div id="reportHistoryModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white rounded-lg p-6 w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-bold"><i class="fas fa-history mr-2 text-green-600"></i>历史报告</h3>
+                <button onclick="closeReportHistoryModal()" class="text-gray-500 hover:text-gray-700"><i class="fas fa-times text-xl"></i></button>
+            </div>
+            <div id="reportHistoryContent"></div>
+        </div>
+    </div>
+
+    <!-- 图片可视化模态框 -->
+    <div id="visualizationModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white rounded-lg p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-bold"><i class="fas fa-image mr-2 text-indigo-600"></i>论文可视化</h3>
+                <button onclick="closeVisualizationModal()" class="text-gray-500 hover:text-gray-700"><i class="fas fa-times text-xl"></i></button>
+            </div>
+            
+            <div id="visualizationInput" class="space-y-4">
+                <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm text-yellow-800">
+                    <i class="fas fa-info-circle mr-2"></i>
+                    提示：请选择一个文档，并输入与该文档内容相关的提示词，系统将生成帮助您理解论文的可视化描述。
+                </div>
+                
+                <div>
+                    <label class="block text-gray-700 mb-2">选择文档（最多1个）</label>
+                    <div id="visualizationDocList" class="space-y-2 max-h-40 overflow-y-auto border rounded-lg p-3"></div>
+                </div>
+                
+                <div>
+                    <label class="block text-gray-700 mb-2">输入提示词（描述您想了解的内容）</label>
+                    <textarea id="visualizationPrompt" rows="3" class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="例如：请帮我理解这篇论文的研究方法流程"></textarea>
+                </div>
+                
+                <div>
+                    <label class="block text-gray-700 mb-2">上传参考图片（可选，最多1张）</label>
+                    <input type="file" id="visualizationImage" accept=".png,.jpg,.jpeg,.gif,.webp" class="w-full px-3 py-2 border rounded-lg">
+                    <p class="text-xs text-gray-500 mt-1">支持 PNG, JPG, GIF, WebP 格式，最大 10MB</p>
+                </div>
+                
+                <button onclick="generateVisualization()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700">
+                    <i class="fas fa-magic mr-2"></i>生成可视化
+                </button>
+            </div>
+            
+            <div id="visualizationResult" class="hidden"></div>
+        </div>
+    </div>
+
+    <!-- PDF.js库 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+</body>
+</html>
+
+<script>
+    const API_BASE = '/api';
+    let token = localStorage.getItem('token');
+    let currentUser = null;
+    let currentConversationId = null;
+    let isAuthLogin = true;
+    let selectedFiles = [];
+
+    // 初始化
+    document.addEventListener('DOMContentLoaded', () => {
+        if (token) checkAuth();
+    });
+
+    // 认证
+    function toggleAuthMode() {
+        isAuthLogin = !isAuthLogin;
+        document.getElementById('authTitle').textContent = isAuthLogin ? '登录' : '注册';
+        document.getElementById('authSubmit').textContent = isAuthLogin ? '登录' : '注册';
+        document.getElementById('authSwitch').innerHTML = isAuthLogin 
+            ? '没有账号？<a href="#" class="text-blue-600 hover:underline" onclick="toggleAuthMode()">注册</a>'
+            : '已有账号？<a href="#" class="text-blue-600 hover:underline" onclick="toggleAuthMode()">登录</a>';
+    }
+
+    document.getElementById('authForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const username = document.getElementById('username').value;
+        const password = document.getElementById('password').value;
+        try {
+            const endpoint = isAuthLogin ? '/auth/login' : '/auth/register';
+            const res = await fetch(API_BASE + endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+            if (!res.ok) throw new Error((await res.json()).detail || '操作失败');
+            const data = await res.json();
+            token = data.token;
+            currentUser = { user_id: data.user_id, username: data.username };
+            localStorage.setItem('token', token);
+            document.getElementById('authModal').classList.add('hidden');
+            document.getElementById('usernameDisplay').textContent = currentUser.username;
+            loadConversations();
+        } catch (err) { alert(err.message); }
+    });
+
+    async function checkAuth() {
+        try {
+            const res = await fetch(API_BASE + '/auth/me', { headers: { 'Authorization': `Bearer ${token}` } });
+            if (res.ok) {
+                currentUser = await res.json();
+                document.getElementById('authModal').classList.add('hidden');
+                document.getElementById('usernameDisplay').textContent = currentUser.username;
+                loadConversations();
+            } else {
+                localStorage.removeItem('token');
+                token = null;
+            }
+        } catch (err) { console.error(err); }
+    }
+
+    async function logout() {
+        try { await fetch(API_BASE + '/auth/logout', { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } }); } catch (err) {}
+        localStorage.removeItem('token');
+        location.reload();
+    }
+
+    // 对话管理
+    async function loadConversations() {
+        try {
+            const res = await fetch(API_BASE + '/conversations', { headers: { 'Authorization': `Bearer ${token}` } });
+            const conversations = await res.json();
+            const list = document.getElementById('conversationList');
+            list.innerHTML = conversations.map(c => `
+                <div class="p-3 rounded-lg cursor-pointer hover:bg-gray-800 transition ${c.conversation_id === currentConversationId ? 'bg-gray-800' : ''}" onclick="loadConversation('${c.conversation_id}')">
+                    <div class="text-sm font-medium truncate">${escapeHtml(c.title)}</div>
+                    <div class="text-xs text-gray-400">${c.turn_count} 轮对话</div>
+                </div>
+            `).join('');
+        } catch (err) { console.error(err); }
+    }
+
+    async function createConversation() {
+        try {
+            const res = await fetch(API_BASE + '/conversations', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({})
+            });
+            const conv = await res.json();
+            currentConversationId = conv.conversation_id;
+            currentSessionDocs = [];
+            document.getElementById('conversationTitle').textContent = '新对话';
+            document.getElementById('messagesContainer').innerHTML = `
+                <div class="text-center text-gray-500 py-8">
+                    <i class="fas fa-comments text-4xl mb-4"></i>
+                    <p>上传文档或直接提问，开始探索科学文献</p>
+                </div>`;
+            document.getElementById('reflectionBtn').classList.add('hidden');
+            document.getElementById('reportBtn').classList.add('hidden');
+            document.getElementById('deleteBtn').classList.remove('hidden');
+            document.getElementById('suggestedQuestions').classList.add('hidden');
+            document.getElementById('docCount').classList.add('hidden');
+            document.getElementById('quickActions').classList.add('hidden');
+            document.getElementById('documentsPanel').classList.add('hidden');
+            loadConversations();
+        } catch (err) { console.error(err); }
+    }
+
+    async function loadConversation(convId) {
+        try {
+            const res = await fetch(API_BASE + `/conversations/${convId}`, { headers: { 'Authorization': `Bearer ${token}` } });
+            const conv = await res.json();
+            currentConversationId = convId;
+            document.getElementById('conversationTitle').textContent = conv.title;
+            document.getElementById('deleteBtn').classList.remove('hidden');
+            
+            const container = document.getElementById('messagesContainer');
+            container.innerHTML = '';
+            for (const turn of conv.turns) {
+                addMessageToUI('user', turn.question);
+                addAnswerToUI(turn);
+            }
+            if (conv.turns.length > 0) document.getElementById('reflectionBtn').classList.remove('hidden');
+            
+            // 加载文档会话
+            loadDocumentSession(convId);
+            loadConversations();
+        } catch (err) { console.error(err); }
+    }
+
+    async function deleteCurrentConversation() {
+        if (!currentConversationId || !confirm('确定要删除这个对话吗？')) return;
+        try {
+            await fetch(API_BASE + `/conversations/${currentConversationId}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            currentConversationId = null;
+            currentSessionDocs = [];
+            document.getElementById('conversationTitle').textContent = '新对话';
+            document.getElementById('messagesContainer').innerHTML = `
+                <div class="text-center text-gray-500 py-8">
+                    <i class="fas fa-comments text-4xl mb-4"></i>
+                    <p>上传文档或直接提问，开始探索科学文献</p>
+                </div>`;
+            document.getElementById('deleteBtn').classList.add('hidden');
+            document.getElementById('reflectionBtn').classList.add('hidden');
+            document.getElementById('reportBtn').classList.add('hidden');
+            document.getElementById('suggestedQuestions').classList.add('hidden');
+            document.getElementById('quickActions').classList.add('hidden');
+            document.getElementById('documentsPanel').classList.add('hidden');
+            document.getElementById('docCount').classList.add('hidden');
+            loadConversations();
+        } catch (err) { alert('删除失败'); }
+    }
+
+    // 文档上传
+    function showUploadModal() { document.getElementById('uploadModal').classList.remove('hidden'); }
+    function closeUploadModal() { 
+        document.getElementById('uploadModal').classList.add('hidden'); 
+        selectedFiles = [];
+        document.getElementById('fileList').innerHTML = '';
+        document.getElementById('selectedFiles').classList.add('hidden');
+        document.getElementById('urlInput').value = '';
+    }
+
+    function handleDragOver(e) { e.preventDefault(); e.currentTarget.classList.add('dragover'); }
+    function handleDragLeave(e) { e.currentTarget.classList.remove('dragover'); }
+    function handleDrop(e) {
+        e.preventDefault();
+        e.currentTarget.classList.remove('dragover');
+        const files = Array.from(e.dataTransfer.files);
+        addFilesToList(files);
+    }
+    function handleFileSelect(e) { addFilesToList(Array.from(e.target.files)); }
+
+    function addFilesToList(files) {
+        const validExts = ['.pdf', '.txt', '.docx', '.doc', '.md', '.tex'];
+        for (const file of files) {
+            const ext = '.' + file.name.split('.').pop().toLowerCase();
+            if (validExts.includes(ext) && selectedFiles.length < 50) {
+                selectedFiles.push(file);
+            }
+        }
+        updateFileList();
+    }
+
+    function updateFileList() {
+        const container = document.getElementById('fileList');
+        if (selectedFiles.length === 0) {
+            document.getElementById('selectedFiles').classList.add('hidden');
+            return;
+        }
+        document.getElementById('selectedFiles').classList.remove('hidden');
+        container.innerHTML = selectedFiles.map((f, i) => `
+            <div class="doc-item flex items-center justify-between p-2 bg-gray-50 rounded">
+                <span class="text-sm truncate flex-1"><i class="fas fa-file-pdf text-red-500 mr-2"></i>${escapeHtml(f.name)}</span>
+                <button onclick="removeFile(${i})" class="text-red-500 hover:text-red-700 ml-2"><i class="fas fa-times"></i></button>
+            </div>
+        `).join('');
+    }
+
+    function removeFile(index) { selectedFiles.splice(index, 1); updateFileList(); }
+
+    async function uploadDocuments() {
+        const urls = document.getElementById('urlInput').value.trim().split('\n').filter(u => u.trim());
+        if (selectedFiles.length === 0 && urls.length === 0) {
+            alert('请选择文件或输入URL');
+            return;
+        }
+
+        document.getElementById('uploadBtn').disabled = true;
+        document.getElementById('uploadBtn').innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>上传中...';
+
+        try {
+            // 上传文件
+            if (selectedFiles.length > 0) {
+                const formData = new FormData();
+                for (const file of selectedFiles) formData.append('files', file);
+                if (currentConversationId) formData.append('conversation_id', currentConversationId);
+
+                const res = await fetch(API_BASE + '/documents/upload', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` },
+                    body: formData
+                });
+                const data = await res.json();
+                if (!currentConversationId) currentConversationId = data.conversation_id;
+                if (data.errors.length > 0) alert('部分文件上传失败:\n' + data.errors.join('\n'));
+            }
+
+            // 上传URL
+            if (urls.length > 0) {
+                const res = await fetch(API_BASE + '/documents/upload-urls', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ urls, conversation_id: currentConversationId })
+                });
+                const data = await res.json();
+                if (!currentConversationId) currentConversationId = data.conversation_id;
+                if (data.errors.length > 0) alert('部分URL下载失败:\n' + data.errors.join('\n'));
+            }
+
+            closeUploadModal();
+            // 显示上传成功提示
+            addMessageToUI('system', '文档上传成功，正在后台处理中...');
+            loadDocumentSession(currentConversationId);
+            loadConversations();
+        } catch (err) {
+            alert('上传失败: ' + err.message);
+        } finally {
+            document.getElementById('uploadBtn').disabled = false;
+            document.getElementById('uploadBtn').innerHTML = '<i class="fas fa-upload mr-2"></i>上传';
+        }
+    }
+
+    let processingPollInterval = null;
+
+    // 存储当前会话的文档列表
+    let currentSessionDocs = [];
+
+    async function loadDocumentSession(convId) {
+        try {
+            const res = await fetch(API_BASE + `/documents/session/${convId}`, { headers: { 'Authorization': `Bearer ${token}` } });
+            const data = await res.json();
+            
+            if (data.documents && data.documents.length > 0) {
+                currentSessionDocs = data.documents;
+                const readyCount = data.documents.filter(d => d.status === 'ready').length;
+                const totalCount = data.documents.length;
+                const processingCount = data.documents.filter(d => d.status === 'processing' || d.status === 'pending').length;
+                
+                if (processingCount > 0) {
+                    document.getElementById('docCount').innerHTML = `<i class="fas fa-spinner fa-spin mr-1"></i>${readyCount}/${totalCount} 文档处理中`;
+                    document.getElementById('docCount').classList.remove('hidden');
+                    // 开始轮询处理状态
+                    startProcessingPoll(data.session_id);
+                } else {
+                    document.getElementById('docCount').textContent = `${totalCount} 个文档`;
+                    document.getElementById('docCount').classList.remove('hidden');
+                    stopProcessingPoll();
+                }
+                
+                if (readyCount > 0) {
+                    document.getElementById('reportBtn').classList.remove('hidden');
+                    // 显示快捷功能按钮
+                    document.getElementById('quickActions').classList.remove('hidden');
+                }
+                
+                // 显示文档列表
+                showDocumentsList(data.documents);
+            } else {
+                currentSessionDocs = [];
+                document.getElementById('quickActions').classList.add('hidden');
+            }
+            
+            if (data.suggested_questions && data.suggested_questions.length > 0) {
+                showSuggestedQuestions(data.suggested_questions);
+            }
+        } catch (err) { console.error(err); }
+    }
+
+    function showDocumentsList(documents) {
+        const container = document.getElementById('documentsList');
+        const panel = document.getElementById('documentsPanel');
+        
+        if (!documents || documents.length === 0) {
+            panel.classList.add('hidden');
+            return;
+        }
+        
+        container.innerHTML = documents.map(doc => {
+            const statusIcon = doc.status === 'ready' 
+                ? '<i class="fas fa-check-circle text-green-500"></i>'
+                : doc.status === 'error'
+                    ? '<i class="fas fa-exclamation-circle text-red-500"></i>'
+                    : '<i class="fas fa-spinner fa-spin text-blue-500"></i>';
+            
+            const isPdf = doc.file_type === 'pdf' || doc.filename.toLowerCase().endsWith('.pdf');
+            const clickHandler = isPdf && doc.status === 'ready' 
+                ? `onclick="openPdfViewer('${doc.doc_id}', 1)"` 
+                : '';
+            const cursorClass = isPdf && doc.status === 'ready' ? 'cursor-pointer hover:bg-blue-100' : '';
+            
+            return `
+                <div class="flex items-center bg-white px-3 py-2 rounded-lg border text-sm ${cursorClass}" ${clickHandler} title="${doc.status === 'ready' ? '点击预览' : doc.status}">
+                    ${statusIcon}
+                    <span class="ml-2 truncate max-w-xs">${escapeHtml(doc.filename)}</span>
+                    ${doc.page_count ? `<span class="ml-2 text-gray-400">(${doc.page_count}页)</span>` : ''}
+                </div>
+            `;
+        }).join('');
+        
+        panel.classList.remove('hidden');
+    }
+
+    function toggleDocumentsPanel() {
+        const panel = document.getElementById('documentsPanel');
+        const list = document.getElementById('documentsList');
+        const icon = panel.querySelector('button i');
+        
+        list.classList.toggle('hidden');
+        icon.classList.toggle('fa-chevron-up');
+        icon.classList.toggle('fa-chevron-down');
+    }
+
+    function toggleDocumentsPanelVisibility() {
+        const panel = document.getElementById('documentsPanel');
+        if (panel.classList.contains('hidden')) {
+            panel.classList.remove('hidden');
+        } else {
+            panel.classList.add('hidden');
+        }
+    }
+
+    function startProcessingPoll(sessionId) {
+        stopProcessingPoll();
+        processingPollInterval = setInterval(async () => {
+            try {
+                const res = await fetch(API_BASE + `/documents/status/${sessionId}`, { headers: { 'Authorization': `Bearer ${token}` } });
+                const data = await res.json();
+                
+                const readyCount = data.ready_count;
+                const totalCount = data.total_count;
+                const isComplete = data.task_status?.status === 'completed' || readyCount === totalCount;
+                
+                if (isComplete) {
+                    document.getElementById('docCount').textContent = `${totalCount} 个文档`;
+                    stopProcessingPoll();
+                    // 重新加载以获取推荐问题
+                    if (currentConversationId) loadDocumentSession(currentConversationId);
+                } else {
+                    document.getElementById('docCount').innerHTML = `<i class="fas fa-spinner fa-spin mr-1"></i>${readyCount}/${totalCount} 文档处理中`;
+                }
+            } catch (err) { console.error(err); }
+        }, 2000); // 每2秒轮询一次
+    }
+
+    function stopProcessingPoll() {
+        if (processingPollInterval) {
+            clearInterval(processingPollInterval);
+            processingPollInterval = null;
+        }
+    }
+
+    function showSuggestedQuestions(questions) {
+        const container = document.getElementById('questionsList');
+        container.innerHTML = questions.map(q => `
+            <div class="suggested-q bg-white px-3 py-2 rounded-lg text-sm text-blue-700 border border-blue-200" onclick="askSuggestedQuestion('${escapeHtml(q)}')">${escapeHtml(q)}</div>
+        `).join('');
+        document.getElementById('suggestedQuestions').classList.remove('hidden');
+    }
+
+    function askSuggestedQuestion(q) {
+        document.getElementById('questionInput').value = q;
+        sendQuestion();
+    }
+</script>
+
+<script>
+    // 问答功能
+    async function sendQuestion() {
+        const input = document.getElementById('questionInput');
+        const question = input.value.trim();
+        if (!question) return;
+        
+        const showThinking = document.getElementById('showThinking').checked;
+        if (!currentConversationId) await createConversation();
+        
+        addMessageToUI('user', question);
+        input.value = '';
+        const loadingId = addLoadingMessage();
+        
+        try {
+            if (showThinking) {
+                await sendQuestionStream(question, loadingId);
+            } else {
+                const res = await fetch(API_BASE + '/ask', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ question, conversation_id: currentConversationId, show_thinking: false })
+                });
+                removeLoadingMessage(loadingId);
+                if (!res.ok) throw new Error('请求失败');
+                const data = await res.json();
+                addAnswerToUI(data);
+                document.getElementById('reflectionBtn').classList.remove('hidden');
+            }
+            loadConversations();
+        } catch (err) {
+            removeLoadingMessage(loadingId);
+            addMessageToUI('error', '请求失败: ' + err.message);
+        }
+    }
+
+    async function sendQuestionStream(question, loadingId) {
+        const res = await fetch(API_BASE + '/ask/stream', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ question, conversation_id: currentConversationId, show_thinking: true })
+        });
+        removeLoadingMessage(loadingId);
+        const thinkingContainer = createThinkingContainer();
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop();
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    try {
+                        const data = JSON.parse(line.slice(6));
+                        handleStreamData(data, thinkingContainer);
+                    } catch (e) {}
+                }
+            }
+        }
+        document.getElementById('reflectionBtn').classList.remove('hidden');
+    }
+
+    function handleStreamData(data, thinkingContainer) {
+        if (data.type === 'status') updateThinkingStatus(thinkingContainer, data.message);
+        else if (data.type === 'thinking_start') startThinking(thinkingContainer);
+        else if (data.type === 'thinking_delta') appendThinkingText(thinkingContainer, data.content);
+        else if (data.type === 'thinking_complete') completeThinking(thinkingContainer, data.elapsed_seconds);
+        else if (data.type === 'thinking_step') addThinkingStep(thinkingContainer, data);
+        else if (data.type === 'final_result' || data.type === 'complete') {
+            finalizeThinking(thinkingContainer);
+            addAnswerToUI(data);
+        }
+    }
+
+    function createThinkingContainer() {
+        const container = document.getElementById('messagesContainer');
+        const div = document.createElement('div');
+        div.className = 'thinking-container message-enter';
+        div.innerHTML = `
+            <div class="thinking-box bg-gray-50 rounded-lg border border-gray-200 overflow-hidden">
+                <div class="thinking-header flex items-center justify-between px-4 py-3 bg-gray-100 cursor-pointer" onclick="toggleThinkingContent(this)">
+                    <div class="flex items-center">
+                        <i class="fas fa-spinner fa-spin text-blue-500 mr-2 thinking-icon"></i>
+                        <span class="text-gray-700 font-medium thinking-title">已思考</span>
+                        <span class="text-gray-500 ml-2 thinking-time"></span>
+                    </div>
+                    <i class="fas fa-chevron-down text-gray-400 toggle-icon transition-transform"></i>
+                </div>
+                <div class="thinking-content px-4 py-3 max-h-96 overflow-y-auto">
+                    <div class="thinking-text text-gray-600 text-sm leading-relaxed whitespace-pre-wrap"></div>
+                </div>
+            </div>
+            <div class="thinking-status text-sm text-gray-500 mt-2 hidden"></div>`;
+        container.appendChild(div);
+        container.scrollTop = container.scrollHeight;
+        return div;
+    }
+
+    function startThinking(container) {
+        const title = container.querySelector('.thinking-title');
+        title.textContent = '思考中...';
+        container._startTime = Date.now();
+        // 更新计时器
+        container._timer = setInterval(() => {
+            const elapsed = Math.round((Date.now() - container._startTime) / 1000);
+            const timeSpan = container.querySelector('.thinking-time');
+            if (timeSpan) timeSpan.textContent = `(${elapsed} 秒)`;
+        }, 1000);
+    }
+
+    function appendThinkingText(container, text) {
+        const textDiv = container.querySelector('.thinking-text');
+        if (textDiv) {
+            // 使用innerHTML以支持格式化，但需要转义
+            const currentText = textDiv.getAttribute('data-raw-text') || '';
+            const newText = currentText + text;
+            textDiv.setAttribute('data-raw-text', newText);
+            textDiv.innerHTML = formatAnswerContent(newText);
+            
+            // 渲染公式
+            renderFormulas(textDiv);
+            
+            // 自动滚动到底部
+            const contentDiv = container.querySelector('.thinking-content');
+            if (contentDiv) contentDiv.scrollTop = contentDiv.scrollHeight;
+        }
+        // 滚动消息容器
+        const messagesContainer = document.getElementById('messagesContainer');
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+
+    function completeThinking(container, elapsedSeconds) {
+        // 停止计时器
+        if (container._timer) {
+            clearInterval(container._timer);
+            container._timer = null;
+        }
+        // 更新标题
+        const title = container.querySelector('.thinking-title');
+        const timeSpan = container.querySelector('.thinking-time');
+        const icon = container.querySelector('.thinking-icon');
+        const thinkingBox = container.querySelector('.thinking-box');
+        
+        title.textContent = '已思考';
+        timeSpan.textContent = `(用时 ${elapsedSeconds} 秒)`;
+        icon.className = 'fas fa-check-circle text-green-500 mr-2 thinking-icon';
+        
+        // 标记思考完成，移除光标动画
+        if (thinkingBox) thinkingBox.classList.add('thinking-complete');
+        
+        // 默认折叠思考内容
+        const content = container.querySelector('.thinking-content');
+        const toggleIcon = container.querySelector('.toggle-icon');
+        content.classList.add('hidden');
+        toggleIcon.classList.add('rotate-180');
+    }
+
+    function toggleThinkingContent(header) {
+        const content = header.nextElementSibling;
+        const toggleIcon = header.querySelector('.toggle-icon');
+        content.classList.toggle('hidden');
+        toggleIcon.classList.toggle('rotate-180');
+    }
+
+    function updateThinkingStatus(container, message) { 
+        const status = container.querySelector('.thinking-status');
+        if (status) {
+            status.textContent = message;
+            status.classList.remove('hidden');
+        }
+    }
+
+    function addThinkingStep(container, step) {
+        // 兼容旧的分步骤模式，转换为文字追加
+        if (step.content) {
+            appendThinkingText(container, '\n\n' + step.content);
+        }
+    }
+
+    function finalizeThinking(container) {
+        // 停止计时器
+        if (container._timer) {
+            clearInterval(container._timer);
+            container._timer = null;
+        }
+        const icon = container.querySelector('.thinking-icon');
+        if (icon) icon.className = 'fas fa-check-circle text-green-500 mr-2 thinking-icon';
+        const title = container.querySelector('.thinking-title');
+        if (title && title.textContent === '思考中...') title.textContent = '已思考';
+    }
+
+    // UI辅助
+    function addMessageToUI(type, content) {
+        const container = document.getElementById('messagesContainer');
+        const welcome = container.querySelector('.text-center');
+        if (welcome) welcome.remove();
+        const div = document.createElement('div');
+        div.className = 'message-enter';
+        if (type === 'user') {
+            div.innerHTML = `<div class="flex justify-end"><div class="bg-blue-600 text-white rounded-lg px-4 py-2 max-w-2xl">${escapeHtml(content)}</div></div>`;
+        } else if (type === 'error') {
+            div.innerHTML = `<div class="bg-red-100 text-red-700 rounded-lg px-4 py-2"><i class="fas fa-exclamation-circle mr-2"></i>${escapeHtml(content)}</div>`;
+        } else if (type === 'system') {
+            div.innerHTML = `<div class="bg-green-100 text-green-700 rounded-lg px-4 py-2"><i class="fas fa-info-circle mr-2"></i>${escapeHtml(content)}</div>`;
+        }
+        container.appendChild(div);
+        container.scrollTop = container.scrollHeight;
+    }
+
+    // 格式化答案内容，支持公式和Markdown
+    function formatAnswerContent(text) {
+        if (!text) return '';
+        
+        // 先提取公式，避免被HTML转义破坏
+        const formulas = [];
+        let formatted = text;
+        
+        // 提取块级公式 $$...$$ 或 \[...\]
+        formatted = formatted.replace(/\$\$([\s\S]*?)\$\$/g, (match, formula) => {
+            const idx = formulas.length;
+            formulas.push({ formula: formula.trim(), display: true });
+            return `__FORMULA_BLOCK_${idx}__`;
+        });
+        formatted = formatted.replace(/\\\[([\s\S]*?)\\\]/g, (match, formula) => {
+            const idx = formulas.length;
+            formulas.push({ formula: formula.trim(), display: true });
+            return `__FORMULA_BLOCK_${idx}__`;
+        });
+        
+        // 提取行内公式 $...$ 或 \(...\)
+        formatted = formatted.replace(/\$([^\$\n]+?)\$/g, (match, formula) => {
+            const idx = formulas.length;
+            formulas.push({ formula: formula.trim(), display: false });
+            return `__FORMULA_INLINE_${idx}__`;
+        });
+        formatted = formatted.replace(/\\\(([\s\S]*?)\\\)/g, (match, formula) => {
+            const idx = formulas.length;
+            formulas.push({ formula: formula.trim(), display: false });
+            return `__FORMULA_INLINE_${idx}__`;
+        });
+        
+        // 转义HTML（公式已被占位符替换，不会被转义）
+        formatted = escapeHtml(formatted);
+        
+        // 还原公式占位符为KaTeX元素
+        formatted = formatted.replace(/__FORMULA_BLOCK_(\d+)__/g, (match, idx) => {
+            const f = formulas[parseInt(idx)];
+            // 对属性值进行编码，保留公式原始内容
+            const encodedFormula = f.formula.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            return `<div class="formula-block katex-formula" data-formula="${encodedFormula}"></div>`;
+        });
+        formatted = formatted.replace(/__FORMULA_INLINE_(\d+)__/g, (match, idx) => {
+            const f = formulas[parseInt(idx)];
+            const encodedFormula = f.formula.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            return `<span class="formula-inline katex-formula" data-formula="${encodedFormula}"></span>`;
+        });
+        
+        // 处理代码块 ```...```
+        formatted = formatted.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code class="language-$1">$2</code></pre>');
+        
+        // 处理行内代码 `...`
+        formatted = formatted.replace(/`([^`]+)`/g, '<code>$1</code>');
+        
+        // 处理标题
+        formatted = formatted.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+        formatted = formatted.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+        formatted = formatted.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+        
+        // 处理粗体和斜体
+        formatted = formatted.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        formatted = formatted.replace(/\*(.+?)\*/g, '<em>$1</em>');
+        
+        // 处理无序列表
+        formatted = formatted.replace(/^[\-\*] (.+)$/gm, '<li>$1</li>');
+        formatted = formatted.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>');
+        
+        // 处理有序列表
+        formatted = formatted.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
+        
+        // 处理引用
+        formatted = formatted.replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>');
+        
+        // 处理换行（保留段落）
+        formatted = formatted.replace(/\n\n/g, '</p><p>');
+        formatted = formatted.replace(/\n/g, '<br>');
+        
+        // 包装在段落中
+        formatted = '<p>' + formatted + '</p>';
+        
+        // 清理空段落
+        formatted = formatted.replace(/<p><\/p>/g, '');
+        formatted = formatted.replace(/<p>(<h[123]>)/g, '$1');
+        formatted = formatted.replace(/(<\/h[123]>)<\/p>/g, '$1');
+        formatted = formatted.replace(/<p>(<ul>)/g, '$1');
+        formatted = formatted.replace(/(<\/ul>)<\/p>/g, '$1');
+        formatted = formatted.replace(/<p>(<pre>)/g, '$1');
+        formatted = formatted.replace(/(<\/pre>)<\/p>/g, '$1');
+        formatted = formatted.replace(/<p>(<div class="formula-block)/g, '$1');
+        formatted = formatted.replace(/(formula-block[^>]*>)<\/div><\/p>/g, '$1</div>');
+        
+        return formatted;
+    }
+    
+    // 渲染公式
+    function renderFormulas(container) {
+        if (typeof katex === 'undefined') {
+            // KaTeX 还未加载，延迟执行
+            setTimeout(() => renderFormulas(container), 100);
+            return;
+        }
+        
+        const formulas = container.querySelectorAll('.katex-formula');
+        formulas.forEach(el => {
+            const formula = el.getAttribute('data-formula');
+            if (formula) {
+                try {
+                    katex.render(formula, el, {
+                        throwOnError: false,
+                        displayMode: el.classList.contains('formula-block'),
+                        trust: true
+                    });
+                } catch (e) {
+                    // 如果渲染失败，显示原始公式
+                    el.textContent = formula;
+                }
+            }
+        });
+    }
+
+    function addAnswerToUI(data) {
+        const container = document.getElementById('messagesContainer');
+        const div = document.createElement('div');
+        div.className = 'message-enter';
+        const confidencePercent = Math.round((data.confidence || 0) * 100);
+        const confidenceTextColor = data.confidence >= 0.7 ? '#16a34a' : data.confidence >= 0.4 ? '#ca8a04' : '#dc2626';
+        const confidenceBarColor = data.confidence >= 0.7 ? '#22c55e' : data.confidence >= 0.4 ? '#eab308' : '#ef4444';
+        
+        const formattedAnswer = formatAnswerContent(data.answer || '');
+        
+        div.innerHTML = `
+            <div class="bg-white rounded-lg shadow p-4 max-w-4xl">
+                <div class="flex items-center justify-between mb-3">
+                    <div class="flex items-center">
+                        <i class="fas fa-robot text-gray-600 mr-2"></i>
+                        <span class="font-semibold text-gray-800">SciAgent</span>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <button onclick="copyAnswer(this)" class="text-gray-500 hover:text-blue-600" title="复制答案"><i class="fas fa-copy"></i></button>
+                        <button onclick="regenerateAnswer('${data.turn_id}')" class="text-gray-500 hover:text-blue-600" title="重新生成"><i class="fas fa-redo"></i></button>
+                        <button onclick="showAnswerHistory('${data.turn_id}')" class="text-gray-500 hover:text-blue-600" title="查看历史"><i class="fas fa-history"></i></button>
+                    </div>
+                </div>
+                <div class="answer-content prose max-w-none mb-4 text-gray-700">${formattedAnswer}</div>
+                <div class="mb-4">
+                    <div class="flex items-center justify-between text-sm mb-1">
+                        <span class="text-gray-600">置信度</span>
+                        <span class="font-semibold" style="color: ${confidenceTextColor}">${confidencePercent}%</span>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-2">
+                        <div class="confidence-bar h-2 rounded-full" style="width: ${confidencePercent}%; background-color: ${confidenceBarColor}"></div>
+                    </div>
+                </div>
+                ${data.citations && data.citations.length > 0 ? `
+                    <div class="border-t pt-3">
+                        <div class="text-sm font-semibold text-gray-700 mb-2"><i class="fas fa-quote-left mr-1"></i> 引用来源 (${data.citations.length})</div>
+                        <div class="space-y-2">
+                            ${data.citations.slice(0, 5).map((c, i) => `
+                                <div class="text-sm bg-gray-50 rounded p-2 cursor-pointer hover:bg-blue-50" onclick="locateCitation('${c.doc_id || ''}', ${c.page || 0}, '${escapeHtml((c.quote || '').replace(/'/g, "\\'").replace(/\n/g, ' '))}')">
+                                    <span class="font-medium text-blue-600">[${i+1}]</span>
+                                    <span class="text-gray-700">${escapeHtml(c.source || '未知来源')}</span>
+                                    ${c.page ? `<span class="text-gray-500">(p.${c.page})</span>` : ''}
+                                    ${c.quote ? `<p class="text-gray-500 text-xs mt-1 italic">"${escapeHtml(c.quote.substring(0, 100))}..."</p>` : ''}
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                ` : ''}
+                ${data.reasoning_trace ? `
+                    <div class="border-t pt-3 mt-3">
+                        <button onclick="toggleReasoningTrace(this)" class="text-sm text-blue-600 hover:text-blue-800">
+                            <i class="fas fa-chevron-down mr-1"></i> 查看推理过程
+                        </button>
+                        <div class="reasoning-trace hidden mt-3 space-y-2">
+                            ${(data.reasoning_trace.thinking_steps || []).map(step => `
+                                <div class="bg-gray-50 rounded p-3 border-l-4 border-blue-500">
+                                    <div class="font-medium text-gray-800">${step.title || ''}</div>
+                                    <p class="text-sm text-gray-600 mt-1">${escapeHtml(step.content || '')}</p>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                ` : ''}
+            </div>`;
+        container.appendChild(div);
+        
+        // 渲染公式
+        renderFormulas(div);
+        
+        container.scrollTop = container.scrollHeight;
+    }
+    
+    // 复制答案
+    function copyAnswer(btn) {
+        const answerDiv = btn.closest('.bg-white').querySelector('.answer-content');
+        if (answerDiv) {
+            const text = answerDiv.innerText;
+            navigator.clipboard.writeText(text).then(() => {
+                const icon = btn.querySelector('i');
+                icon.className = 'fas fa-check';
+                setTimeout(() => { icon.className = 'fas fa-copy'; }, 1500);
+            });
+        }
+    }
+
+    function addLoadingMessage() {
+        const container = document.getElementById('messagesContainer');
+        const id = 'loading-' + Date.now();
+        const div = document.createElement('div');
+        div.id = id;
+        div.className = 'message-enter';
+        div.innerHTML = `
+            <div class="bg-white rounded-lg shadow p-4 max-w-md">
+                <div class="flex items-center">
+                    <i class="fas fa-robot text-gray-600 mr-2"></i>
+                    <span class="text-gray-600">正在思考</span>
+                    <span class="typing-indicator ml-2">
+                        <span class="inline-block w-2 h-2 bg-gray-400 rounded-full mx-0.5"></span>
+                        <span class="inline-block w-2 h-2 bg-gray-400 rounded-full mx-0.5"></span>
+                        <span class="inline-block w-2 h-2 bg-gray-400 rounded-full mx-0.5"></span>
+                    </span>
+                </div>
+            </div>`;
+        container.appendChild(div);
+        container.scrollTop = container.scrollHeight;
+        return id;
+    }
+
+    function removeLoadingMessage(id) { const el = document.getElementById(id); if (el) el.remove(); }
+    function toggleReasoningTrace(btn) {
+        const trace = btn.nextElementSibling;
+        const icon = btn.querySelector('i');
+        trace.classList.toggle('hidden');
+        icon.classList.toggle('fa-chevron-down');
+        icon.classList.toggle('fa-chevron-up');
+    }
+
+    // PDF预览相关变量
+    let pdfDoc = null;
+    let currentPdfPage = 1;
+    let pdfScale = 1.0;
+    let currentPdfDocId = null;
+    let currentHighlightText = null;  // 当前需要高亮的引用文本
+
+    function locateCitation(docId, page, quote = '') {
+        if (!docId) {
+            alert('无法定位：缺少文档ID');
+            return;
+        }
+        openPdfViewer(docId, page || 1, quote);
+    }
+
+    async function openPdfViewer(docId, targetPage = 1, highlightText = '') {
+        currentPdfDocId = docId;
+        currentPdfPage = targetPage;
+        currentHighlightText = highlightText;  // 保存需要高亮的文本
+        
+        // 显示加载状态
+        document.getElementById('pdfModal').classList.remove('hidden');
+        document.getElementById('pdfContainer').innerHTML = `
+            <div class="flex flex-col items-center justify-center h-full">
+                <i class="fas fa-spinner fa-spin text-4xl text-blue-600 mb-4"></i>
+                <p class="text-gray-600">正在加载PDF...</p>
+            </div>`;
+        
+        try {
+            // 获取PDF信息
+            const infoRes = await fetch(`${API_BASE}/pdf/${docId}/info`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            
+            if (!infoRes.ok) {
+                throw new Error('无法获取PDF信息');
+            }
+            
+            const info = await infoRes.json();
+            document.getElementById('pdfTitle').textContent = info.filename || 'PDF预览';
+            // 设置下载链接（需要通过fetch下载，因为需要认证）
+            document.getElementById('pdfDownloadLink').onclick = (e) => {
+                e.preventDefault();
+                downloadPdf(docId, info.filename);
+            };
+            
+            // 恢复canvas
+            document.getElementById('pdfContainer').innerHTML = '<canvas id="pdfCanvas" class="shadow-lg"></canvas>';
+            
+            // 设置PDF.js worker
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+            
+            // 先获取PDF数据（因为PDF.js不支持自定义header的方式加载）
+            const pdfResponse = await fetch(`${API_BASE}/pdf/${docId}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            
+            if (!pdfResponse.ok) {
+                throw new Error('无法加载PDF文件');
+            }
+            
+            const pdfData = await pdfResponse.arrayBuffer();
+            
+            // 加载PDF
+            const loadingTask = pdfjsLib.getDocument({ data: pdfData });
+            
+            pdfDoc = await loadingTask.promise;
+            document.getElementById('pdfTotalPages').textContent = pdfDoc.numPages;
+            document.getElementById('pdfPageInput').max = pdfDoc.numPages;
+            
+            // 确保目标页在有效范围内
+            if (targetPage > pdfDoc.numPages) targetPage = pdfDoc.numPages;
+            if (targetPage < 1) targetPage = 1;
+            currentPdfPage = targetPage;
+            
+            // 渲染页面
+            await renderPdfPage(currentPdfPage);
+            
+        } catch (err) {
+            console.error('PDF加载失败:', err);
+            document.getElementById('pdfContainer').innerHTML = `
+                <div class="flex flex-col items-center justify-center h-full">
+                    <i class="fas fa-exclamation-circle text-4xl text-red-500 mb-4"></i>
+                    <p class="text-gray-600">PDF加载失败: ${err.message}</p>
+                    <button onclick="closePdfModal()" class="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">关闭</button>
+                </div>`;
+        }
+    }
+
+    async function renderPdfPage(pageNum) {
+        if (!pdfDoc) return;
+        
+        try {
+            const page = await pdfDoc.getPage(pageNum);
+            const canvas = document.getElementById('pdfCanvas');
+            const ctx = canvas.getContext('2d');
+            
+            // 计算缩放比例
+            const viewport = page.getViewport({ scale: pdfScale * window.devicePixelRatio });
+            
+            canvas.height = viewport.height;
+            canvas.width = viewport.width;
+            canvas.style.width = `${viewport.width / window.devicePixelRatio}px`;
+            canvas.style.height = `${viewport.height / window.devicePixelRatio}px`;
+            
+            // 渲染页面
+            await page.render({
+                canvasContext: ctx,
+                viewport: viewport
+            }).promise;
+            
+            // 更新页码显示
+            document.getElementById('pdfPageInput').value = pageNum;
+            document.getElementById('pdfZoomLevel').textContent = `${Math.round(pdfScale * 100)}%`;
+            
+            // 加载页面文本内容
+            loadPageContent(pageNum);
+            
+        } catch (err) {
+            console.error('页面渲染失败:', err);
+        }
+    }
+
+    async function loadPageContent(pageNum) {
+        if (!currentPdfDocId) return;
+        
+        try {
+            const res = await fetch(`${API_BASE}/pdf/${currentPdfDocId}/page/${pageNum}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            
+            if (res.ok) {
+                const data = await res.json();
+                const pageText = data.text || '（无文本内容）';
+                const contentEl = document.getElementById('pdfPageContent');
+                
+                // 如果有需要高亮的文本，进行高亮处理
+                if (currentHighlightText && pageText.length > 10) {
+                    const highlightedHtml = highlightTextInContent(pageText, currentHighlightText);
+                    contentEl.innerHTML = highlightedHtml;
+                    
+                    // 自动展开内容面板并滚动到高亮位置
+                    const panel = document.getElementById('pdfContentPanel');
+                    panel.classList.remove('hidden');
+                    
+                    // 延迟滚动到高亮位置
+                    setTimeout(() => {
+                        const highlightEl = contentEl.querySelector('.citation-highlight');
+                        if (highlightEl) {
+                            highlightEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }
+                    }, 100);
+                } else {
+                    contentEl.textContent = pageText;
+                }
+            } else {
+                document.getElementById('pdfPageContent').textContent = '（无法加载页面内容）';
+            }
+        } catch (err) {
+            document.getElementById('pdfPageContent').textContent = '（加载失败）';
+        }
+    }
+    
+    // 在文本内容中高亮引用文段
+    function highlightTextInContent(fullText, quoteText) {
+        if (!quoteText || quoteText.length < 10) {
+            return escapeHtml(fullText);
+        }
+        
+        // 清理引用文本（移除多余空格和换行）
+        const cleanQuote = quoteText.trim().replace(/\s+/g, ' ');
+        const cleanFullText = fullText.replace(/\s+/g, ' ');
+        
+        // 尝试精确匹配
+        let matchIndex = cleanFullText.toLowerCase().indexOf(cleanQuote.toLowerCase());
+        
+        // 如果精确匹配失败，尝试模糊匹配（取引用文本的前30个字符）
+        if (matchIndex === -1 && cleanQuote.length > 30) {
+            const shortQuote = cleanQuote.substring(0, 30);
+            matchIndex = cleanFullText.toLowerCase().indexOf(shortQuote.toLowerCase());
+        }
+        
+        // 如果还是找不到，尝试更短的片段
+        if (matchIndex === -1 && cleanQuote.length > 15) {
+            const shortQuote = cleanQuote.substring(0, 15);
+            matchIndex = cleanFullText.toLowerCase().indexOf(shortQuote.toLowerCase());
+        }
+        
+        if (matchIndex !== -1) {
+            // 找到匹配，计算在原文中的位置
+            // 由于我们清理了空格，需要在原文中找到对应位置
+            const beforeMatch = cleanFullText.substring(0, matchIndex);
+            const matchLength = Math.min(cleanQuote.length, cleanFullText.length - matchIndex);
+            const matchedText = cleanFullText.substring(matchIndex, matchIndex + matchLength);
+            const afterMatch = cleanFullText.substring(matchIndex + matchLength);
+            
+            return escapeHtml(beforeMatch) + 
+                   '<span class="citation-highlight bg-yellow-200 px-1 rounded border-l-4 border-yellow-500">' + 
+                   escapeHtml(matchedText) + 
+                   '</span>' + 
+                   escapeHtml(afterMatch);
+        }
+        
+        // 没有找到匹配，返回原文
+        return escapeHtml(fullText);
+    }
+
+    function pdfPrevPage() {
+        if (currentPdfPage > 1) {
+            currentPdfPage--;
+            renderPdfPage(currentPdfPage);
+        }
+    }
+
+    function pdfNextPage() {
+        if (pdfDoc && currentPdfPage < pdfDoc.numPages) {
+            currentPdfPage++;
+            renderPdfPage(currentPdfPage);
+        }
+    }
+
+    function pdfGoToPage(pageNum) {
+        const num = parseInt(pageNum);
+        if (pdfDoc && num >= 1 && num <= pdfDoc.numPages) {
+            currentPdfPage = num;
+            renderPdfPage(currentPdfPage);
+        }
+    }
+
+    function pdfZoomIn() {
+        pdfScale = Math.min(pdfScale + 0.25, 3.0);
+        renderPdfPage(currentPdfPage);
+    }
+
+    function pdfZoomOut() {
+        pdfScale = Math.max(pdfScale - 0.25, 0.5);
+        renderPdfPage(currentPdfPage);
+    }
+
+    function pdfFitWidth() {
+        const container = document.getElementById('pdfContainer');
+        const containerWidth = container.clientWidth - 40; // 减去padding
+        
+        if (pdfDoc) {
+            pdfDoc.getPage(currentPdfPage).then(page => {
+                const viewport = page.getViewport({ scale: 1.0 });
+                pdfScale = containerWidth / viewport.width;
+                renderPdfPage(currentPdfPage);
+            });
+        }
+    }
+
+    function toggleContentPanel() {
+        const panel = document.getElementById('pdfContentPanel');
+        panel.classList.toggle('hidden');
+    }
+
+    function closePdfModal() {
+        document.getElementById('pdfModal').classList.add('hidden');
+        document.getElementById('pdfContentPanel').classList.add('hidden');
+        pdfDoc = null;
+        currentPdfDocId = null;
+        currentHighlightText = null;  // 清除高亮文本
+    }
+
+    async function downloadPdf(docId, filename) {
+        try {
+            const res = await fetch(`${API_BASE}/pdf/${docId}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            
+            if (!res.ok) throw new Error('下载失败');
+            
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename || 'document.pdf';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+        } catch (err) {
+            alert('下载失败: ' + err.message);
+        }
+    }
+
+    // 键盘快捷键支持
+    document.addEventListener('keydown', (e) => {
+        if (document.getElementById('pdfModal').classList.contains('hidden')) return;
+        
+        if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+            e.preventDefault();
+            pdfPrevPage();
+        } else if (e.key === 'ArrowRight' || e.key === 'PageDown') {
+            e.preventDefault();
+            pdfNextPage();
+        } else if (e.key === 'Escape') {
+            closePdfModal();
+        } else if (e.key === '+' || e.key === '=') {
+            e.preventDefault();
+            pdfZoomIn();
+        } else if (e.key === '-') {
+            e.preventDefault();
+            pdfZoomOut();
+        }
+    });
+
+    // 重新生成
+    async function regenerateAnswer(turnId) {
+        if (!confirm('确定要重新生成这个回答吗？')) return;
+        try {
+            const res = await fetch(API_BASE + '/regenerate', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ conversation_id: currentConversationId, turn_id: turnId })
+            });
+            if (!res.ok) throw new Error('重新生成失败');
+            loadConversation(currentConversationId);
+        } catch (err) { alert(err.message); }
+    }
+
+    // 答案历史
+    async function showAnswerHistory(turnId) {
+        try {
+            const res = await fetch(API_BASE + `/conversations/${currentConversationId}/turns/${turnId}/history`, { headers: { 'Authorization': `Bearer ${token}` } });
+            if (!res.ok) throw new Error('获取历史失败');
+            const data = await res.json();
+            const content = document.getElementById('historyContent');
+            content.innerHTML = `
+                <div class="space-y-4">
+                    <div class="bg-blue-50 rounded-lg p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="font-semibold text-blue-800">当前回答</span>
+                            <span class="text-sm text-blue-600">置信度: ${Math.round(data.current.confidence * 100)}%</span>
+                        </div>
+                        <p class="text-gray-700">${escapeHtml(data.current.answer.substring(0, 300))}...</p>
+                    </div>
+                    ${data.history.length > 0 ? `
+                        <h4 class="font-semibold text-gray-700">历史版本</h4>
+                        ${data.history.map((h, i) => `
+                            <div class="bg-gray-50 rounded-lg p-4">
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="text-gray-600">版本 ${data.history.length - i}</span>
+                                    <span class="text-sm text-gray-500">${new Date(h.timestamp).toLocaleString()}</span>
+                                </div>
+                                <p class="text-gray-700">${escapeHtml(h.answer.substring(0, 300))}...</p>
+                                <span class="text-sm text-gray-500">置信度: ${Math.round(h.confidence * 100)}%</span>
+                            </div>
+                        `).join('')}
+                    ` : '<p class="text-gray-500">暂无历史版本</p>'}
+                </div>`;
+            document.getElementById('historyModal').classList.remove('hidden');
+        } catch (err) { alert(err.message); }
+    }
+    function closeHistory() { document.getElementById('historyModal').classList.add('hidden'); }
+</script>
+
+<script>
+    // 报告生成
+    function showReportModal() { 
+        document.getElementById('reportModal').classList.remove('hidden'); 
+        document.getElementById('reportContent').classList.add('hidden');
+        document.getElementById('reportInput').classList.remove('hidden');
+    }
+    function closeReportModal() { document.getElementById('reportModal').classList.add('hidden'); }
+
+    async function generateReport() {
+        const requirement = document.getElementById('reportRequirement').value.trim();
+        if (!requirement) { alert('请输入报告需求'); return; }
+        
+        document.getElementById('reportInput').innerHTML = '<div class="text-center py-8"><i class="fas fa-spinner fa-spin text-4xl text-blue-600"></i><p class="mt-4 text-gray-600">正在生成报告...</p></div>';
+        
+        try {
+            const res = await fetch(API_BASE + '/report/generate', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ conversation_id: currentConversationId, requirement })
+            });
+            if (!res.ok) throw new Error((await res.json()).detail || '生成失败');
+            const data = await res.json();
+            displayReport(data);
+        } catch (err) {
+            document.getElementById('reportInput').innerHTML = `<div class="text-red-600"><i class="fas fa-exclamation-circle mr-2"></i>${err.message}</div>`;
+        }
+    }
+
+    function displayReport(data) {
+        document.getElementById('reportInput').classList.add('hidden');
+        const content = document.getElementById('reportContent');
+        const report = data.report;
+        
+        content.innerHTML = `
+            <div class="space-y-4">
+                <div class="bg-gradient-to-r from-blue-600 to-blue-800 text-white rounded-lg p-4">
+                    <h2 class="text-xl font-bold">${escapeHtml(report.title || '综述报告')}</h2>
+                    <p class="text-blue-100 mt-2 text-sm">置信度: ${Math.round((data.confidence || 0) * 100)}%</p>
+                </div>
+                
+                ${report.abstract ? `
+                    <div class="bg-gray-50 rounded-lg p-4">
+                        <h3 class="font-semibold text-gray-800 mb-2">摘要</h3>
+                        <p class="text-gray-700">${escapeHtml(report.abstract)}</p>
+                    </div>
+                ` : ''}
+                
+                ${(report.sections || []).map(section => `
+                    <div class="bg-white border rounded-lg p-4 report-section">
+                        <h3 class="font-semibold text-gray-800 mb-2">${escapeHtml(section.heading || '')}</h3>
+                        <div class="answer-content text-gray-700">${formatReportContent(section.content || '')}</div>
+                    </div>
+                `).join('')}
+                
+                ${report.conclusion ? `
+                    <div class="bg-green-50 rounded-lg p-4">
+                        <h3 class="font-semibold text-green-800 mb-2">结论</h3>
+                        <p class="text-gray-700">${escapeHtml(report.conclusion)}</p>
+                    </div>
+                ` : ''}
+                
+                <div class="border-t pt-4">
+                    <h3 class="font-semibold text-gray-800 mb-3">引用来源 (${(data.citations || []).length})</h3>
+                    <div class="space-y-2 max-h-60 overflow-y-auto">
+                        ${(data.citations || []).map((c, i) => `
+                            <div class="text-sm bg-gray-50 rounded p-2 cursor-pointer hover:bg-blue-50" onclick="locateCitation('${c.doc_id || ''}', ${c.page || 0})">
+                                <span class="font-medium text-blue-600">[${c.id || i+1}]</span>
+                                <span class="text-gray-700">${escapeHtml(c.source || '未知来源')}</span>
+                                ${c.page ? `<span class="text-gray-500">(p.${c.page})</span>` : ''}
+                                ${c.quote ? `<p class="text-gray-500 text-xs mt-1 italic">"${escapeHtml(c.quote.substring(0, 80))}..."</p>` : ''}
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+                
+                <div class="flex justify-end space-x-3">
+                    <button onclick="copyReport()" class="px-4 py-2 border rounded-lg hover:bg-gray-50"><i class="fas fa-copy mr-2"></i>复制</button>
+                    <button onclick="closeReportModal()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">关闭</button>
+                </div>
+            </div>`;
+        content.classList.remove('hidden');
+        
+        // 渲染报告中的公式
+        content.querySelectorAll('.report-section').forEach(section => {
+            renderFormulas(section);
+        });
+    }
+
+    function formatReportContent(content) {
+        // 先格式化内容（包括公式）
+        let formatted = formatAnswerContent(content);
+        // 高亮引用标记
+        formatted = formatted.replace(/\[来源(\d+)\]/g, '<span class="text-blue-600 font-medium cursor-pointer hover:underline">[来源$1]</span>');
+        return formatted;
+    }
+
+    function copyReport() {
+        const content = document.getElementById('reportContent').innerText;
+        navigator.clipboard.writeText(content).then(() => alert('已复制到剪贴板'));
+    }
+
+    // 反思 - 更详细版本
+    async function showReflection() {
+        if (!currentConversationId) return;
+        try {
+            const res = await fetch(API_BASE + `/conversations/${currentConversationId}/reflection`, { headers: { 'Authorization': `Bearer ${token}` } });
+            if (!res.ok) throw new Error('获取反思失败');
+            const data = await res.json();
+            const content = document.getElementById('reflectionContent');
+            content.innerHTML = `
+                <div class="space-y-4">
+                    <div class="bg-yellow-50 rounded-lg p-4">
+                        <h4 class="font-semibold text-yellow-800 mb-2"><i class="fas fa-lightbulb mr-2"></i>总体评估</h4>
+                        <p class="text-gray-700 whitespace-pre-wrap">${escapeHtml(data.content || '')}</p>
+                    </div>
+                    ${data.topic_summary ? `
+                        <div class="bg-gray-50 rounded-lg p-4">
+                            <h4 class="font-semibold text-gray-800 mb-2"><i class="fas fa-bookmark mr-2"></i>话题总结</h4>
+                            <p class="text-gray-700">${escapeHtml(data.topic_summary)}</p>
+                        </div>
+                    ` : ''}
+                    ${data.key_insights && data.key_insights.length > 0 ? `
+                        <div class="bg-green-50 rounded-lg p-4">
+                            <h4 class="font-semibold text-green-800 mb-2"><i class="fas fa-star mr-2"></i>关键洞察</h4>
+                            <ul class="list-disc list-inside text-gray-700 space-y-1">
+                                ${data.key_insights.map(s => `<li>${escapeHtml(s)}</li>`).join('')}
+                            </ul>
+                        </div>
+                    ` : ''}
+                    ${data.suggestions && data.suggestions.length > 0 ? `
+                        <div class="bg-blue-50 rounded-lg p-4">
+                            <h4 class="font-semibold text-blue-800 mb-2"><i class="fas fa-comment-dots mr-2"></i>建议</h4>
+                            <ul class="list-disc list-inside text-gray-700 space-y-1">
+                                ${data.suggestions.map(s => `<li>${escapeHtml(s)}</li>`).join('')}
+                            </ul>
+                        </div>
+                    ` : ''}
+                    ${data.knowledge_gaps && data.knowledge_gaps.length > 0 ? `
+                        <div class="bg-red-50 rounded-lg p-4">
+                            <h4 class="font-semibold text-red-800 mb-2"><i class="fas fa-puzzle-piece mr-2"></i>知识空白</h4>
+                            <ul class="list-disc list-inside text-gray-700 space-y-1">
+                                ${data.knowledge_gaps.map(s => `<li>${escapeHtml(s)}</li>`).join('')}
+                            </ul>
+                        </div>
+                    ` : ''}
+                    ${data.improvement_areas && data.improvement_areas.length > 0 ? `
+                        <div class="bg-orange-50 rounded-lg p-4">
+                            <h4 class="font-semibold text-orange-800 mb-2"><i class="fas fa-exclamation-triangle mr-2"></i>改进空间</h4>
+                            <ul class="list-disc list-inside text-gray-700 space-y-1">
+                                ${data.improvement_areas.map(a => `<li>${escapeHtml(a)}</li>`).join('')}
+                            </ul>
+                        </div>
+                    ` : ''}
+                    ${data.follow_up_questions && data.follow_up_questions.length > 0 ? `
+                        <div class="bg-purple-50 rounded-lg p-4">
+                            <h4 class="font-semibold text-purple-800 mb-2"><i class="fas fa-question-circle mr-2"></i>后续问题建议</h4>
+                            <div class="space-y-2">
+                                ${data.follow_up_questions.map(q => `
+                                    <div class="text-gray-700 cursor-pointer hover:text-purple-600 hover:bg-purple-100 p-2 rounded" onclick="askSuggestedQuestion('${escapeHtml(q)}')">
+                                        <i class="fas fa-arrow-right mr-2 text-purple-500"></i>${escapeHtml(q)}
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    ` : ''}
+                </div>`;
+            document.getElementById('reflectionModal').classList.remove('hidden');
+        } catch (err) { alert(err.message); }
+    }
+    function closeReflection() { document.getElementById('reflectionModal').classList.add('hidden'); }
+
+    // 思维导图功能
+    function showMindmapModal() {
+        if (!currentConversationId) {
+            alert('请先上传文档');
+            return;
+        }
+        // 填充文档列表
+        const docList = document.getElementById('mindmapDocList');
+        const readyDocs = currentSessionDocs.filter(d => d.status === 'ready');
+        if (readyDocs.length === 0) {
+            docList.innerHTML = '<p class="text-gray-500">没有可用的文档</p>';
+        } else {
+            docList.innerHTML = readyDocs.map(doc => `
+                <label class="flex items-center p-2 hover:bg-gray-50 rounded cursor-pointer">
+                    <input type="checkbox" class="mindmap-doc-checkbox mr-3" value="${doc.doc_id}">
+                    <i class="fas fa-file-pdf text-red-500 mr-2"></i>
+                    <span class="text-sm">${escapeHtml(doc.filename)}</span>
+                </label>
+            `).join('');
+        }
+        document.getElementById('mindmapContent').classList.add('hidden');
+        document.getElementById('mindmapDocSelect').classList.remove('hidden');
+        document.getElementById('mindmapModal').classList.remove('hidden');
+    }
+
+    function closeMindmapModal() {
+        document.getElementById('mindmapModal').classList.add('hidden');
+    }
+
+    async function generateMindmap() {
+        const selectedDocs = Array.from(document.querySelectorAll('.mindmap-doc-checkbox:checked')).map(cb => cb.value);
+        
+        document.getElementById('mindmapDocSelect').innerHTML = '<div class="text-center py-8"><i class="fas fa-spinner fa-spin text-4xl text-purple-600"></i><p class="mt-4 text-gray-600">正在生成思维导图...</p></div>';
+        
+        try {
+            const res = await fetch(API_BASE + '/mindmap/generate', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ conversation_id: currentConversationId, doc_ids: selectedDocs })
+            });
+            if (!res.ok) throw new Error((await res.json()).detail || '生成失败');
+            const data = await res.json();
+            displayMindmap(data.mindmap);
+        } catch (err) {
+            document.getElementById('mindmapDocSelect').innerHTML = `<div class="text-red-600"><i class="fas fa-exclamation-circle mr-2"></i>${err.message}</div>`;
+        }
+    }
+
+    function displayMindmap(mindmap) {
+        document.getElementById('mindmapDocSelect').classList.add('hidden');
+        const content = document.getElementById('mindmapContent');
+        const tree = document.getElementById('mindmapTree');
+        
+        // 递归渲染思维导图树
+        function renderNode(node, level = 0) {
+            const indent = level * 20;
+            const colors = ['text-purple-700', 'text-blue-600', 'text-green-600', 'text-orange-600'];
+            const bgColors = ['bg-purple-100', 'bg-blue-50', 'bg-green-50', 'bg-orange-50'];
+            const color = colors[Math.min(level, colors.length - 1)];
+            const bgColor = bgColors[Math.min(level, bgColors.length - 1)];
+            
+            let html = `<div class="mindmap-node ${bgColor} rounded-lg p-2 mb-2" style="margin-left: ${indent}px">
+                <span class="${color} font-medium">${level === 0 ? '<i class="fas fa-brain mr-2"></i>' : '<i class="fas fa-chevron-right mr-2 text-xs"></i>'}${escapeHtml(node.name || node.title || '')}</span>
+            </div>`;
+            
+            if (node.children && node.children.length > 0) {
+                for (const child of node.children) {
+                    html += renderNode(child, level + 1);
+                }
+            }
+            return html;
+        }
+        
+        tree.innerHTML = renderNode(mindmap);
+        content.classList.remove('hidden');
+    }
+
+    // 翻译功能
+    let translateMode = 'text';
+
+    function showTranslateModal() {
+        if (!currentConversationId) {
+            alert('请先创建对话');
+            return;
+        }
+        setTranslateMode('text');
+        // 填充文档列表
+        const docList = document.getElementById('translateDocList');
+        const readyDocs = currentSessionDocs.filter(d => d.status === 'ready');
+        if (readyDocs.length === 0) {
+            docList.innerHTML = '<p class="text-gray-500">没有可用的文档</p>';
+        } else {
+            docList.innerHTML = readyDocs.map(doc => `
+                <label class="flex items-center p-2 hover:bg-gray-50 rounded cursor-pointer">
+                    <input type="radio" name="translateDoc" class="translate-doc-radio mr-3" value="${doc.doc_id}">
+                    <i class="fas fa-file-pdf text-red-500 mr-2"></i>
+                    <span class="text-sm">${escapeHtml(doc.filename)}</span>
+                </label>
+            `).join('');
+        }
+        document.getElementById('translateResult').classList.add('hidden');
+        document.getElementById('translateModal').classList.remove('hidden');
+    }
+
+    function closeTranslateModal() {
+        document.getElementById('translateModal').classList.add('hidden');
+    }
+
+    function setTranslateMode(mode) {
+        translateMode = mode;
+        if (mode === 'text') {
+            document.getElementById('translateTextBtn').className = 'px-4 py-2 bg-blue-600 text-white rounded-lg';
+            document.getElementById('translateDocBtn').className = 'px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300';
+            document.getElementById('translateTextMode').classList.remove('hidden');
+            document.getElementById('translateDocMode').classList.add('hidden');
+        } else {
+            document.getElementById('translateDocBtn').className = 'px-4 py-2 bg-blue-600 text-white rounded-lg';
+            document.getElementById('translateTextBtn').className = 'px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300';
+            document.getElementById('translateTextMode').classList.add('hidden');
+            document.getElementById('translateDocMode').classList.remove('hidden');
+        }
+    }
+
+    async function doTranslate() {
+        const targetLang = document.getElementById('targetLanguage').value;
+        
+        if (translateMode === 'text') {
+            const text = document.getElementById('translateInput').value.trim();
+            if (!text) {
+                alert('请输入要翻译的文本');
+                return;
+            }
+            
+            document.getElementById('translateResult').innerHTML = '<div class="text-center py-4"><i class="fas fa-spinner fa-spin text-2xl text-blue-600"></i><p class="mt-2 text-gray-600">翻译中...</p></div>';
+            document.getElementById('translateResult').classList.remove('hidden');
+            
+            try {
+                const res = await fetch(API_BASE + '/translate/text', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text, target_language: targetLang })
+                });
+                if (!res.ok) {
+                    let errorMsg = '翻译失败';
+                    try {
+                        const errData = await res.json();
+                        errorMsg = errData.detail || errorMsg;
+                    } catch (e) {
+                        errorMsg = `服务器错误 (${res.status})`;
+                    }
+                    throw new Error(errorMsg);
+                }
+                const data = await res.json();
+                
+                // 检查翻译结果是否有效
+                if (!data.translated || data.translated.startsWith('[API调用失败')) {
+                    throw new Error(data.translated || '翻译返回空结果');
+                }
+                
+                // 保存翻译结果供复制使用
+                window._lastTextTranslation = data.translated;
+                
+                document.getElementById('translateResult').innerHTML = `
+                    <label class="block text-gray-700 mb-2">翻译结果</label>
+                    <div id="translateOutput" class="bg-gray-50 rounded-lg p-4 whitespace-pre-wrap max-h-64 overflow-y-auto">${escapeHtml(data.translated)}</div>
+                    <button onclick="copyTranslation()" class="mt-2 text-blue-600 hover:text-blue-800 text-sm">
+                        <i class="fas fa-copy mr-1"></i>复制翻译结果
+                    </button>`;
+            } catch (err) {
+                console.error('翻译错误:', err);
+                document.getElementById('translateResult').innerHTML = `
+                    <div class="bg-red-50 border border-red-200 rounded-lg p-4">
+                        <div class="flex items-center text-red-700 mb-2">
+                            <i class="fas fa-exclamation-circle mr-2"></i>
+                            <span class="font-medium">翻译失败</span>
+                        </div>
+                        <p class="text-red-600 text-sm">${escapeHtml(err.message)}</p>
+                        <button onclick="doTranslate()" class="mt-3 text-sm text-blue-600 hover:text-blue-800">
+                            <i class="fas fa-redo mr-1"></i>重试
+                        </button>
+                    </div>`;
+            }
+        } else {
+            const selectedDoc = document.querySelector('.translate-doc-radio:checked');
+            if (!selectedDoc) {
+                alert('请选择要翻译的文档');
+                return;
+            }
+            
+            // 获取页数范围
+            const startPage = document.getElementById('translateStartPage').value;
+            const endPage = document.getElementById('translateEndPage').value;
+            const preserveLatex = document.getElementById('preserveLatex').checked;
+            
+            // 构建请求参数
+            const requestBody = { 
+                conversation_id: currentConversationId, 
+                doc_id: selectedDoc.value, 
+                target_language: targetLang,
+                preserve_latex: preserveLatex
+            };
+            if (startPage) requestBody.start_page = parseInt(startPage);
+            if (endPage) requestBody.end_page = parseInt(endPage);
+            
+            const rangeText = startPage || endPage ? `第 ${startPage || '1'} - ${endPage || '末'} 页` : '全部页面';
+            document.getElementById('translateResult').innerHTML = `<div class="text-center py-4"><i class="fas fa-spinner fa-spin text-2xl text-blue-600"></i><p class="mt-2 text-gray-600">正在翻译文档 (${rangeText})，这可能需要一些时间...</p></div>`;
+            document.getElementById('translateResult').classList.remove('hidden');
+            
+            try {
+                const res = await fetch(API_BASE + '/translate/document', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify(requestBody)
+                });
+                
+                // 先检查响应状态
+                if (!res.ok) {
+                    let errorMsg = '翻译失败';
+                    try {
+                        const errData = await res.json();
+                        errorMsg = errData.detail || errorMsg;
+                    } catch (e) {
+                        errorMsg = `服务器错误 (${res.status})`;
+                    }
+                    throw new Error(errorMsg);
+                }
+                
+                const data = await res.json();
+                
+                // 检查返回数据
+                if (!data.pages || data.pages.length === 0) {
+                    throw new Error('文档内容为空或无法解析');
+                }
+                
+                // 显示翻译范围信息
+                const rangeInfo = data.translated_range ? 
+                    `(第 ${data.translated_range.start} - ${data.translated_range.end} 页，共 ${data.success_count}/${data.pages.length} 页成功)` : 
+                    `(共 ${data.success_count}/${data.total_pages} 页成功)`;
+                
+                let resultHtml = `<label class="block text-gray-700 mb-2">
+                    文档翻译结果: ${escapeHtml(data.filename || '未知文档')} 
+                    <span class="text-sm text-gray-500">${rangeInfo}</span>
+                </label>
+                <div id="translateResultContent" class="bg-gray-50 rounded-lg p-4 max-h-96 overflow-y-auto space-y-4">`;
+                
+                let hasContent = false;
+                for (const page of data.pages) {
+                    if (page.translated && page.translated !== '[翻译失败]' && page.translated.trim()) {
+                        hasContent = true;
+                        // 使用 formatTranslatedContent 处理 LaTeX 公式
+                        const formattedContent = formatTranslatedContent(page.translated, page.has_latex);
+                        resultHtml += `<div class="border-b pb-3 last:border-b-0 translate-page-content">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                                    第 ${page.page_num} 页
+                                    ${page.has_latex ? '<i class="fas fa-square-root-alt ml-1 text-purple-500" title="包含数学公式"></i>' : ''}
+                                </span>
+                                <button onclick="copyPageTranslation(this)" class="text-xs text-gray-500 hover:text-blue-600" data-text="${escapeHtml(page.translated.replace(/"/g, '&quot;'))}">
+                                    <i class="fas fa-copy mr-1"></i>复制
+                                </button>
+                            </div>
+                            <div class="text-gray-700 leading-relaxed answer-content">${formattedContent}</div>
+                        </div>`;
+                    }
+                }
+                
+                if (!hasContent) {
+                    resultHtml += '<div class="text-gray-500 text-center py-4">文档内容为空或翻译失败</div>';
+                }
+                
+                resultHtml += '</div>';
+                resultHtml += `<div class="mt-3 flex space-x-3">
+                    <button onclick="copyAllTranslation()" class="text-blue-600 hover:text-blue-800 text-sm">
+                        <i class="fas fa-copy mr-1"></i>复制全部翻译
+                    </button>
+                    <button onclick="downloadTranslation('${escapeHtml(data.filename || 'translation')}')" class="text-green-600 hover:text-green-800 text-sm">
+                        <i class="fas fa-download mr-1"></i>下载翻译结果
+                    </button>
+                </div>`;
+                document.getElementById('translateResult').innerHTML = resultHtml;
+                
+                // 渲染 LaTeX 公式
+                const resultContent = document.getElementById('translateResultContent');
+                if (resultContent) {
+                    resultContent.querySelectorAll('.translate-page-content').forEach(el => {
+                        renderFormulas(el);
+                    });
+                }
+                
+                // 保存翻译数据供下载使用
+                window._lastTranslation = data;
+            } catch (err) {
+                console.error('翻译错误:', err);
+                document.getElementById('translateResult').innerHTML = `
+                    <div class="bg-red-50 border border-red-200 rounded-lg p-4">
+                        <div class="flex items-center text-red-700 mb-2">
+                            <i class="fas fa-exclamation-circle mr-2"></i>
+                            <span class="font-medium">翻译失败</span>
+                        </div>
+                        <p class="text-red-600 text-sm">${escapeHtml(err.message)}</p>
+                        <button onclick="doTranslate()" class="mt-3 text-sm text-blue-600 hover:text-blue-800">
+                            <i class="fas fa-redo mr-1"></i>重试
+                        </button>
+                    </div>`;
+            }
+        }
+    }
+
+    function copyTranslation() {
+        // 优先使用保存的翻译结果
+        if (window._lastTextTranslation) {
+            navigator.clipboard.writeText(window._lastTextTranslation).then(() => alert('已复制到剪贴板'));
+            return;
+        }
+        // 回退到从DOM获取
+        const output = document.getElementById('translateOutput');
+        if (output) {
+            navigator.clipboard.writeText(output.textContent).then(() => alert('已复制到剪贴板'));
+        }
+    }
+    
+    // 复制单页翻译
+    function copyPageTranslation(btn) {
+        const text = btn.getAttribute('data-text');
+        if (text) {
+            navigator.clipboard.writeText(text.replace(/&quot;/g, '"')).then(() => {
+                const icon = btn.querySelector('i');
+                const originalClass = icon.className;
+                icon.className = 'fas fa-check mr-1';
+                setTimeout(() => { icon.className = originalClass; }, 1500);
+            });
+        }
+    }
+    
+    // 复制全部翻译
+    function copyAllTranslation() {
+        if (window._lastTranslation && window._lastTranslation.pages) {
+            const allText = window._lastTranslation.pages
+                .filter(p => p.translated && p.translated !== '[翻译失败]')
+                .map(p => `=== 第 ${p.page_num} 页 ===\n${p.translated}`)
+                .join('\n\n');
+            navigator.clipboard.writeText(allText).then(() => alert('已复制全部翻译到剪贴板'));
+        }
+    }
+    
+    // 下载翻译结果
+    function downloadTranslation(filename) {
+        if (window._lastTranslation && window._lastTranslation.pages) {
+            const allText = window._lastTranslation.pages
+                .filter(p => p.translated && p.translated !== '[翻译失败]')
+                .map(p => `=== 第 ${p.page_num} 页 ===\n${p.translated}`)
+                .join('\n\n');
+            
+            const blob = new Blob([allText], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${filename}_translated.txt`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+    }
+
+    // 感兴趣内容功能
+    async function showInterestingContent() {
+        if (!currentConversationId) {
+            alert('请先上传文档');
+            return;
+        }
+        
+        const content = document.getElementById('interestingContent');
+        content.innerHTML = '<div class="text-center py-8"><i class="fas fa-spinner fa-spin text-4xl text-yellow-500"></i><p class="mt-4 text-gray-600">正在分析文档内容...</p></div>';
+        document.getElementById('interestingModal').classList.remove('hidden');
+        
+        try {
+            const res = await fetch(API_BASE + '/interesting/generate', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ conversation_id: currentConversationId })
+            });
+            if (!res.ok) throw new Error((await res.json()).detail || '分析失败');
+            const data = await res.json();
+            displayInterestingContent(data.interesting_content);
+        } catch (err) {
+            content.innerHTML = `<div class="text-red-600"><i class="fas fa-exclamation-circle mr-2"></i>${err.message}</div>`;
+        }
+    }
+
+    function displayInterestingContent(data) {
+        const content = document.getElementById('interestingContent');
+        content.innerHTML = `
+            <div class="space-y-4">
+                ${data.summary ? `
+                    <div class="bg-gray-50 rounded-lg p-4">
+                        <h4 class="font-semibold text-gray-800 mb-2"><i class="fas fa-file-alt mr-2"></i>内容概述</h4>
+                        <p class="text-gray-700">${escapeHtml(data.summary)}</p>
+                    </div>
+                ` : ''}
+                ${data.main_topics && data.main_topics.length > 0 ? `
+                    <div class="bg-blue-50 rounded-lg p-4">
+                        <h4 class="font-semibold text-blue-800 mb-2"><i class="fas fa-tags mr-2"></i>主要主题</h4>
+                        <div class="flex flex-wrap gap-2">
+                            ${data.main_topics.map(t => `<span class="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm">${escapeHtml(t)}</span>`).join('')}
+                        </div>
+                    </div>
+                ` : ''}
+                ${data.key_findings && data.key_findings.length > 0 ? `
+                    <div class="bg-green-50 rounded-lg p-4">
+                        <h4 class="font-semibold text-green-800 mb-2"><i class="fas fa-star mr-2"></i>关键发现</h4>
+                        <div class="space-y-2">
+                            ${data.key_findings.map(f => `
+                                <div class="bg-white rounded p-3 border border-green-200">
+                                    <div class="font-medium text-green-700">${escapeHtml(f.title || '')}</div>
+                                    <p class="text-gray-600 text-sm mt-1">${escapeHtml(f.description || '')}</p>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                ` : ''}
+                ${data.related_questions && data.related_questions.length > 0 ? `
+                    <div class="bg-purple-50 rounded-lg p-4">
+                        <h4 class="font-semibold text-purple-800 mb-2"><i class="fas fa-question-circle mr-2"></i>您可能想问</h4>
+                        <div class="space-y-2">
+                            ${data.related_questions.map(q => `
+                                <div class="text-gray-700 cursor-pointer hover:text-purple-600 hover:bg-purple-100 p-2 rounded" onclick="askFromInteresting('${escapeHtml(q)}')">
+                                    <i class="fas fa-arrow-right mr-2 text-purple-500"></i>${escapeHtml(q)}
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                ` : ''}
+                ${data.recommended_explorations && data.recommended_explorations.length > 0 ? `
+                    <div class="bg-yellow-50 rounded-lg p-4">
+                        <h4 class="font-semibold text-yellow-800 mb-2"><i class="fas fa-compass mr-2"></i>推荐探索方向</h4>
+                        <div class="space-y-2">
+                            ${data.recommended_explorations.map(e => `
+                                <div class="bg-white rounded p-3 border border-yellow-200">
+                                    <div class="font-medium text-yellow-700">${escapeHtml(e.topic || '')}</div>
+                                    <p class="text-gray-600 text-sm mt-1">${escapeHtml(e.reason || '')}</p>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                ` : ''}
+            </div>`;
+    }
+
+    function askFromInteresting(question) {
+        closeInterestingModal();
+        document.getElementById('questionInput').value = question;
+        sendQuestion();
+    }
+
+    function closeInterestingModal() {
+        document.getElementById('interestingModal').classList.add('hidden');
+    }
+
+    // ============================================================
+    // 报告历史功能
+    // ============================================================
+    
+    async function showReportHistoryModal() {
+        if (!currentConversationId) {
+            alert('请先创建对话');
+            return;
+        }
+        
+        const content = document.getElementById('reportHistoryContent');
+        content.innerHTML = '<div class="text-center py-8"><i class="fas fa-spinner fa-spin text-4xl text-green-600"></i><p class="mt-4 text-gray-600">正在加载历史报告...</p></div>';
+        document.getElementById('reportHistoryModal').classList.remove('hidden');
+        
+        try {
+            const res = await fetch(API_BASE + `/report/history/${currentConversationId}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (!res.ok) throw new Error('获取历史报告失败');
+            const data = await res.json();
+            displayReportHistory(data.reports);
+        } catch (err) {
+            content.innerHTML = `<div class="text-red-600"><i class="fas fa-exclamation-circle mr-2"></i>${err.message}</div>`;
+        }
+    }
+    
+    function displayReportHistory(reports) {
+        const content = document.getElementById('reportHistoryContent');
+        
+        if (!reports || reports.length === 0) {
+            content.innerHTML = '<div class="text-center text-gray-500 py-8"><i class="fas fa-file-alt text-4xl mb-4"></i><p>暂无历史报告</p></div>';
+            return;
+        }
+        
+        content.innerHTML = `
+            <div class="space-y-3">
+                ${reports.map(r => `
+                    <div class="bg-gray-50 rounded-lg p-4 hover:bg-gray-100 cursor-pointer" onclick="viewReportDetail('${r.report_id}')">
+                        <div class="flex items-center justify-between">
+                            <div class="flex-1">
+                                <h4 class="font-semibold text-gray-800">${escapeHtml(r.title)}</h4>
+                                <p class="text-sm text-gray-600 mt-1">${escapeHtml(r.requirement)}</p>
+                                <div class="flex items-center mt-2 text-xs text-gray-500">
+                                    <span class="mr-4"><i class="fas fa-chart-line mr-1"></i>置信度: ${Math.round(r.confidence * 100)}%</span>
+                                    <span><i class="fas fa-clock mr-1"></i>${new Date(r.created_at).toLocaleString()}</span>
+                                </div>
+                            </div>
+                            <div class="flex items-center space-x-2">
+                                <button onclick="event.stopPropagation(); deleteReport('${r.report_id}')" class="text-red-500 hover:text-red-700 p-2" title="删除">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>`;
+    }
+    
+    async function viewReportDetail(reportId) {
+        try {
+            const res = await fetch(API_BASE + `/report/${reportId}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (!res.ok) throw new Error('获取报告详情失败');
+            const data = await res.json();
+            
+            // 关闭历史模态框，打开报告模态框显示详情
+            closeReportHistoryModal();
+            document.getElementById('reportModal').classList.remove('hidden');
+            displayReport({
+                report: data.report,
+                citations: data.citations,
+                confidence: data.confidence
+            });
+        } catch (err) {
+            alert(err.message);
+        }
+    }
+    
+    async function deleteReport(reportId) {
+        if (!confirm('确定要删除这个报告吗？')) return;
+        
+        try {
+            const res = await fetch(API_BASE + `/report/${reportId}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (!res.ok) throw new Error('删除失败');
+            // 刷新列表
+            showReportHistoryModal();
+        } catch (err) {
+            alert(err.message);
+        }
+    }
+    
+    function closeReportHistoryModal() {
+        document.getElementById('reportHistoryModal').classList.add('hidden');
+    }
+
+    // ============================================================
+    // 图片可视化功能
+    // ============================================================
+    
+    async function showVisualizationModal() {
+        if (!currentConversationId) {
+            alert('请先上传文档');
+            return;
+        }
+        
+        // 加载文档列表
+        const docList = document.getElementById('visualizationDocList');
+        const readyDocs = currentSessionDocs.filter(d => d.status === 'ready');
+        
+        if (readyDocs.length === 0) {
+            docList.innerHTML = '<p class="text-gray-500">没有可用的文档，请先上传文档</p>';
+        } else {
+            docList.innerHTML = readyDocs.map(doc => `
+                <label class="flex items-center p-2 hover:bg-gray-50 rounded cursor-pointer">
+                    <input type="radio" name="visualizationDoc" class="visualization-doc-radio mr-3" value="${doc.doc_id}">
+                    <i class="fas fa-file-pdf text-red-500 mr-2"></i>
+                    <span class="text-sm">${escapeHtml(doc.filename)}</span>
+                </label>
+            `).join('');
+        }
+        
+        document.getElementById('visualizationInput').classList.remove('hidden');
+        document.getElementById('visualizationResult').classList.add('hidden');
+        document.getElementById('visualizationPrompt').value = '';
+        document.getElementById('visualizationImage').value = '';
+        document.getElementById('visualizationModal').classList.remove('hidden');
+    }
+    
+    async function generateVisualization() {
+        const selectedDoc = document.querySelector('.visualization-doc-radio:checked');
+        if (!selectedDoc) {
+            alert('请选择一个文档');
+            return;
+        }
+        
+        const prompt = document.getElementById('visualizationPrompt').value.trim();
+        if (!prompt) {
+            alert('请输入提示词');
+            return;
+        }
+        
+        const imageInput = document.getElementById('visualizationImage');
+        const hasImage = imageInput.files && imageInput.files.length > 0;
+        
+        document.getElementById('visualizationInput').innerHTML = '<div class="text-center py-8"><i class="fas fa-spinner fa-spin text-4xl text-indigo-600"></i><p class="mt-4 text-gray-600">正在生成可视化...</p></div>';
+        
+        try {
+            let data;
+            
+            if (hasImage) {
+                // 带图片的请求
+                const formData = new FormData();
+                formData.append('file', imageInput.files[0]);
+                formData.append('conversation_id', currentConversationId);
+                formData.append('doc_id', selectedDoc.value);
+                formData.append('prompt', prompt);
+                
+                const res = await fetch(API_BASE + '/visualization/upload-image', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` },
+                    body: formData
+                });
+                if (!res.ok) throw new Error((await res.json()).detail || '生成失败');
+                data = await res.json();
+            } else {
+                // 不带图片的请求
+                const res = await fetch(API_BASE + '/visualization/generate', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        conversation_id: currentConversationId,
+                        doc_id: selectedDoc.value,
+                        prompt: prompt
+                    })
+                });
+                if (!res.ok) throw new Error((await res.json()).detail || '生成失败');
+                data = await res.json();
+            }
+            
+            displayVisualization(data);
+        } catch (err) {
+            document.getElementById('visualizationInput').innerHTML = `
+                <div class="text-red-600 mb-4"><i class="fas fa-exclamation-circle mr-2"></i>${err.message}</div>
+                <button onclick="showVisualizationModal()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700">重试</button>`;
+        }
+    }
+    
+    function displayVisualization(data) {
+        document.getElementById('visualizationInput').classList.add('hidden');
+        const result = document.getElementById('visualizationResult');
+        
+        const viz = data.visualization || {};
+        
+        // 检查是否有生成的图片
+        const hasImage = viz.image_base64 || viz.image_url;
+        
+        result.innerHTML = `
+            <div class="space-y-4">
+                <div class="bg-indigo-50 rounded-lg p-4">
+                    <h4 class="font-semibold text-indigo-800 mb-2"><i class="fas fa-image mr-2"></i>${escapeHtml(viz.title || '生成的图片')}</h4>
+                    <p class="text-gray-700">${escapeHtml(viz.description || '')}</p>
+                </div>
+                
+                ${hasImage ? `
+                    <div class="bg-white border rounded-lg p-4">
+                        <h5 class="font-semibold text-gray-800 mb-3"><i class="fas fa-paint-brush mr-2"></i>生成的图片</h5>
+                        <div class="flex justify-center">
+                            <img src="${viz.image_base64 ? 'data:image/png;base64,' + viz.image_base64 : viz.image_url}" 
+                                 alt="${escapeHtml(viz.title || '生成的图片')}" 
+                                 class="max-w-full max-h-96 rounded-lg shadow-lg cursor-pointer"
+                                 onclick="openImageFullscreen(this.src)">
+                        </div>
+                        <div class="flex justify-center mt-3 space-x-3">
+                            <button onclick="downloadGeneratedImage('${viz.image_base64 ? 'data:image/png;base64,' + viz.image_base64 : viz.image_url}', '${escapeHtml(viz.title || 'visualization')}.png')" 
+                                    class="text-indigo-600 hover:text-indigo-800 text-sm">
+                                <i class="fas fa-download mr-1"></i>下载图片
+                            </button>
+                            <button onclick="openImageFullscreen('${viz.image_base64 ? 'data:image/png;base64,' + viz.image_base64 : viz.image_url}')" 
+                                    class="text-indigo-600 hover:text-indigo-800 text-sm">
+                                <i class="fas fa-expand mr-1"></i>全屏查看
+                            </button>
+                        </div>
+                    </div>
+                ` : `
+                    <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                        <p class="text-yellow-800"><i class="fas fa-exclamation-triangle mr-2"></i>图片生成失败，请检查API配置或重试</p>
+                    </div>
+                `}
+                
+                ${viz.style ? `
+                    <div class="bg-gray-50 rounded-lg p-4">
+                        <div class="text-sm text-gray-600">图片风格: <span class="font-medium">${escapeHtml(viz.style)}</span></div>
+                        ${viz.prompt_used ? `<div class="text-sm text-gray-500 mt-1">使用的提示词: ${escapeHtml(viz.prompt_used.substring(0, 100))}...</div>` : ''}
+                    </div>
+                ` : ''}
+                
+                ${data.note ? `
+                    <div class="text-sm text-gray-500 italic">
+                        <i class="fas fa-info-circle mr-1"></i>${escapeHtml(data.note)}
+                    </div>
+                ` : ''}
+                
+                <div class="flex justify-end space-x-3">
+                    <button onclick="showVisualizationModal()" class="px-4 py-2 border rounded-lg hover:bg-gray-50">重新生成</button>
+                    <button onclick="closeVisualizationModal()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700">关闭</button>
+                </div>
+            </div>`;
+        
+        result.classList.remove('hidden');
+    }
+    
+    // 下载生成的图片
+    function downloadGeneratedImage(src, filename) {
+        const a = document.createElement('a');
+        a.href = src;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    }
+    
+    // 全屏查看图片
+    function openImageFullscreen(src) {
+        const modal = document.createElement('div');
+        modal.className = 'fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50';
+        modal.onclick = () => modal.remove();
+        modal.innerHTML = `
+            <div class="relative max-w-5xl max-h-[90vh] p-4">
+                <button onclick="this.parentElement.parentElement.remove()" class="absolute top-2 right-2 text-white text-2xl hover:text-gray-300">
+                    <i class="fas fa-times"></i>
+                </button>
+                <img src="${src}" class="max-w-full max-h-[85vh] rounded-lg" onclick="event.stopPropagation()">
+            </div>`;
+        document.body.appendChild(modal);
+    }
+    
+    // 保留旧的displayVisualization逻辑作为备用（当没有图片时显示元素列表）
+    function displayVisualizationElements(viz) {
+        return `
+                ${viz.elements && viz.elements.length > 0 ? `
+                    <div class="bg-white border rounded-lg p-4">
+                        <h5 class="font-semibold text-gray-800 mb-3"><i class="fas fa-sitemap mr-2"></i>可视化元素</h5>
+                        <div class="space-y-2">
+                            ${viz.elements.map((el, i) => `
+                                <div class="flex items-start p-2 bg-gray-50 rounded">
+                                    <span class="w-6 h-6 bg-indigo-500 text-white rounded-full flex items-center justify-center text-xs mr-3">${i+1}</span>
+                                    <div>
+                                        <div class="font-medium text-gray-800">${escapeHtml(el.name || '')}</div>
+                                        ${el.description ? `<p class="text-sm text-gray-600">${escapeHtml(el.description)}</p>` : ''}
+                                        ${el.connections && el.connections.length > 0 ? `<p class="text-xs text-indigo-600 mt-1">连接到: ${el.connections.map(c => escapeHtml(c)).join(', ')}</p>` : ''}
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                ` : ''}
+                
+                ${viz.key_concepts && viz.key_concepts.length > 0 ? `
+                    <div class="bg-blue-50 rounded-lg p-4">
+                        <h5 class="font-semibold text-blue-800 mb-2"><i class="fas fa-key mr-2"></i>关键概念</h5>
+                        <div class="flex flex-wrap gap-2">
+                            ${viz.key_concepts.map(c => `<span class="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm">${escapeHtml(c)}</span>`).join('')}
+                        </div>
+                    </div>
+                ` : ''}`;
+    }
+    
+    function closeVisualizationModal() {
+        document.getElementById('visualizationModal').classList.add('hidden');
+    }
+
+    // 工具函数
+    function escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    // 格式化翻译内容，处理 LaTeX 公式
+    function formatTranslatedContent(text, hasLatex) {
+        if (!text) return '';
+        
+        if (!hasLatex) {
+            // 没有 LaTeX，直接转义并处理换行
+            let formatted = escapeHtml(text);
+            formatted = formatted.replace(/\n\n/g, '</p><p>');
+            formatted = formatted.replace(/\n/g, '<br>');
+            return '<p>' + formatted + '</p>';
+        }
+        
+        // 有 LaTeX 公式，使用类似 formatAnswerContent 的处理逻辑
+        const formulas = [];
+        let formatted = text;
+        
+        // 提取块级公式 $$...$$ 或 \[...\]
+        formatted = formatted.replace(/\$\$([\s\S]*?)\$\$/g, (match, formula) => {
+            const idx = formulas.length;
+            formulas.push({ formula: formula.trim(), display: true });
+            return `__FORMULA_BLOCK_${idx}__`;
+        });
+        formatted = formatted.replace(/\\\[([\s\S]*?)\\\]/g, (match, formula) => {
+            const idx = formulas.length;
+            formulas.push({ formula: formula.trim(), display: true });
+            return `__FORMULA_BLOCK_${idx}__`;
+        });
+        
+        // 提取行内公式 $...$ 或 \(...\)
+        formatted = formatted.replace(/\$([^\$\n]+?)\$/g, (match, formula) => {
+            const idx = formulas.length;
+            formulas.push({ formula: formula.trim(), display: false });
+            return `__FORMULA_INLINE_${idx}__`;
+        });
+        formatted = formatted.replace(/\\\(([\s\S]*?)\\\)/g, (match, formula) => {
+            const idx = formulas.length;
+            formulas.push({ formula: formula.trim(), display: false });
+            return `__FORMULA_INLINE_${idx}__`;
+        });
+        
+        // 转义HTML
+        formatted = escapeHtml(formatted);
+        
+        // 还原公式占位符为KaTeX元素
+        formatted = formatted.replace(/__FORMULA_BLOCK_(\d+)__/g, (match, idx) => {
+            const f = formulas[parseInt(idx)];
+            const encodedFormula = f.formula.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            return `<div class="formula-block katex-formula" data-formula="${encodedFormula}"></div>`;
+        });
+        formatted = formatted.replace(/__FORMULA_INLINE_(\d+)__/g, (match, idx) => {
+            const f = formulas[parseInt(idx)];
+            const encodedFormula = f.formula.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            return `<span class="formula-inline katex-formula" data-formula="${encodedFormula}"></span>`;
+        });
+        
+        // 处理换行
+        formatted = formatted.replace(/\n\n/g, '</p><p>');
+        formatted = formatted.replace(/\n/g, '<br>');
+        
+        return '<p>' + formatted + '</p>';
+    }
+
+    function handleKeyDown(event) {
+        if (event.key === 'Enter' && !event.shiftKey) {
+            event.preventDefault();
+            sendQuestion();
+        }
+    }
+
+    function toggleSidebar() { document.getElementById('sidebar').classList.toggle('collapsed'); }
+</script>
+</body>
+</html>
