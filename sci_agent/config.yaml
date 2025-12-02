@@ -1,0 +1,161 @@
+# 数据路径配置
+data:
+  pdf_dir: data/pdfs
+  processed_dir: data/processed
+  index_path: data/index.faiss
+
+# 模型配置
+models:
+  # Qwen3-Embedding 用于向量检索（本地运行）
+  embed_model: Qwen/Qwen3-Embedding-0.6B
+  embed_dim: 1024
+  
+  # 推理模型
+  reasoner_model: Qwen/Qwen2.5-7B-Instruct
+  
+  # 视觉模型
+  vl_model: Qwen/Qwen2-VL-7B-Instruct
+  
+  # ============================================
+  # API 提供商配置（选择一个）
+  # ============================================
+  # 支持的提供商:
+  #   - dashscope  : 阿里云 (Qwen系列)
+  #   - openai     : OpenAI (GPT系列)
+  #   - deepseek   : DeepSeek
+  #   - zhipu      : 智谱 (GLM系列)
+  #   - moonshot   : Moonshot/Kimi
+  #   - baichuan   : 百川
+  #   - siliconflow: 硅基流动 (多模型聚合)
+  #   - ollama     : 本地 Ollama
+  #   - local      : 本地 Transformers
+  # ============================================
+  
+  api_provider: siliconflow
+  
+  # 各平台对应的环境变量（设置其中一个即可）:
+  # - DASHSCOPE_API_KEY   : 阿里云
+  # - OPENAI_API_KEY      : OpenAI
+  # - DEEPSEEK_API_KEY    : DeepSeek
+  # - ZHIPU_API_KEY       : 智谱
+  # - MOONSHOT_API_KEY    : Moonshot
+  # - BAICHUAN_API_KEY    : 百川
+  # - SILICONFLOW_API_KEY : 硅基流动
+  
+  # 自定义 API 地址（可选，用于自建服务或代理）
+  # api_base: https://your-proxy.com/v1
+  # api_key: your-api-key
+
+# ============================================
+# 各平台推荐模型
+# ============================================
+# DashScope (阿里云):
+#   - qwen-turbo (快速便宜)
+#   - qwen-plus (均衡)
+#   - qwen-max (最强)
+#   - qwen-vl-max (视觉)
+#
+# OpenAI:
+#   - gpt-4o-mini (便宜)
+#   - gpt-4o (强)
+#   - gpt-4-turbo (最强)
+#
+# DeepSeek:
+#   - deepseek-chat (通用)
+#   - deepseek-coder (代码)
+#
+# 智谱:
+#   - glm-4-flash (快速免费)
+#   - glm-4 (强)
+#   - glm-4v (视觉)
+#
+# Moonshot:
+#   - moonshot-v1-8k
+#   - moonshot-v1-32k
+#   - moonshot-v1-128k
+#
+# 硅基流动 (聚合多模型):
+#   - Qwen/Qwen2.5-7B-Instruct
+#   - deepseek-ai/DeepSeek-V2.5
+#   - 01-ai/Yi-1.5-9B-Chat
+# ============================================
+
+# Pipeline配置
+pipeline:
+  top_k: 200  # 增大检索数量，收集更多资料
+  max_iterations: 5
+  confidence_threshold: 0.1  # 降低置信度阈值，减少约束
+  chunk_size: 1024
+  chunk_overlap: 100  # 增加重叠，提高召回率
+  min_score_threshold: 0.15  # 最小相关度阈值（降低）
+
+# Agent配置
+agents:
+  planner:
+    max_subtasks: 8  # 增加子任务数量
+  retriever:
+    rerank: true
+    top_k: 50  # 每个子任务检索更多
+    min_score: 0.1  # 降低最小分数要求
+  reviewer:
+    use_llm_judge: true
+  
+  # 多LLM推理配置（多模型集成）
+  reasoning:
+    # 启用多模型集成推理
+    enable_ensemble: true
+    
+    # 文本推理模型（主推理模型）
+    text_reasoner:
+      provider: siliconflow
+      model: Qwen/Qwen2.5-7B-Instruct
+      temperature: 0.3
+      max_tokens: 4096
+    
+    # 数学/公式推理模型
+    math_reasoner:
+      provider: siliconflow
+      model: deepseek-ai/DeepSeek-V2.5
+      temperature: 0.2
+      max_tokens: 2048
+    
+    # 视觉理解模型
+    vision_model:
+      provider: siliconflow
+      model: Qwen/Qwen2-VL-7B-Instruct
+    
+    # 备选推理模型（用于集成投票或回退）
+    ensemble_models:
+      - provider: siliconflow
+        model: Qwen/Qwen2.5-7B-Instruct
+        weight: 0.4
+      - provider: siliconflow
+        model: deepseek-ai/DeepSeek-V2.5
+        weight: 0.35
+      - provider: siliconflow
+        model: Qwen/Qwen2.5-14B-Instruct
+        weight: 0.25
+    # deepseek-ai/DeepSeek-V2.5
+    # 推理策略配置
+    strategy:
+      # 推理模式: single(单模型) | ensemble(集成) | cascade(级联)
+      mode: ensemble
+      # 集成方法: vote(投票) | weighted(加权) | best(选最优)
+      ensemble_method: weighted
+      # 置信度阈值，低于此值时启用备选模型
+      confidence_threshold: 0.6
+      # 是否启用自动回退
+      auto_fallback: true
+
+# 图片生成配置
+# 注意：实际配置从 .env 文件读取，这里仅作参考
+image_generation:
+  enabled: true
+  max_upload_size: 10485760  # 10MB
+  supported_formats: [".png", ".jpg", ".jpeg", ".gif", ".webp"]
+  # 配置说明（实际值在 .env 中设置）:
+  # IMAGE_API_PROVIDER: siliconflow
+  # IMAGE_MODEL: black-forest-labs/FLUX.1-schnell (免费) 或其他模型
+  # IMAGE_SIZE: 1024x1024
+  # IMAGE_STEPS: 30
+  # IMAGE_GUIDANCE: 7.5
